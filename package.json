@@ -1,0 +1,30 @@
+{
+  "name": "proj-emmi",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Electron app",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "ELECTRON_RUN_AS_NODE= vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^24.0.13",
+    "electron": "^37.2.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.8.3",
+    "vite": "^7.0.4",
+    "vite-plugin-electron": "^0.29.0",
+    "vite-plugin-electron-renderer": "^0.14.6"
+  },
+  "allowScripts": {
+    "electron@37.10.3": true,
+    "esbuild@0.28.1": true
+  },
+  "dependencies": {
+    "@hugeicons/core-free-icons": "^4.2.2",
+    "heroicons": "^2.2.0"
+  }
+}
