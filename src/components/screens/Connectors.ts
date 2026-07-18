@@ -2,13 +2,13 @@ import { el, button } from '@/lib/dom'
 import { PageToolbar } from '@/components/shared/PageToolbar'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { relativeTime } from '@/lib/format'
-import { connectorLogo } from '@/lib/connectorLogos'
+import { connectorIconTile } from '@/lib/connectorLogos'
+import { labelPathText } from '@/lib/pathVariables'
 import {
   connectConnector,
   disconnectConnector,
   getState,
   navigate,
-  triggerAuthExpired,
 } from '@/app/store'
 import type { Connector, LogEntry } from '@/types/domain'
 
@@ -199,7 +199,7 @@ function popularCard(
   card.type = 'button'
   const left = el('div', 'connector-popular-left')
   left.append(logoTile(connector), el('span', 'connector-popular-name', [connector.name]))
-  const action = statusAction(connector, refresh, true)
+  const action = statusAction(connector, refresh)
   action.addEventListener('click', (e) => e.stopPropagation())
   card.append(left, action)
   card.addEventListener('click', onSelect)
@@ -220,7 +220,7 @@ function tableRow(
   name.append(logoTile(connector), el('span', undefined, [connector.name]))
 
   const actionWrap = el('div', 'connector-table-status')
-  const action = statusAction(connector, refresh, false)
+  const action = statusAction(connector, refresh)
   action.addEventListener('click', (e) => e.stopPropagation())
   actionWrap.append(action)
 
@@ -266,16 +266,7 @@ function detailPanel(
   panel.append(el('div', 'connectors-detail-desc', [connector.description]))
 
   const actions = el('div', 'connectors-detail-actions')
-  const primary = statusAction(connector, refresh, false)
-  actions.append(primary)
-  if (connector.authStatus === 'connected') {
-    actions.append(
-      pillBtn('Simulate expire', 'ghost', () => {
-        triggerAuthExpired(connector.id)
-        refresh()
-      }),
-    )
-  }
+  actions.append(statusAction(connector, refresh))
   panel.append(actions)
 
   const facts = el('div', 'connectors-detail-facts')
@@ -294,8 +285,17 @@ function detailPanel(
       el('div', 'connectors-detail-note', [
         `${pending.length} pending item${pending.length === 1 ? '' : 's'} use this connector.`,
       ]),
-      pillBtn('Open Review', 'ghost', () => navigate('review')),
     )
+    const openReview = button('connectors-usage-row')
+    openReview.type = 'button'
+    openReview.append(
+      el('span', 'connectors-usage-name', ['Open Review']),
+      el('span', 'connectors-usage-meta', [
+        `${pending.length} pending`,
+      ]),
+    )
+    openReview.addEventListener('click', () => navigate('review'))
+    block.append(openReview)
     panel.append(block)
   }
 
@@ -323,7 +323,7 @@ function detailPanel(
     const block = el('div', 'connectors-detail-block')
     block.append(el('div', 'dashboard-section-title', ['Recent activity']))
     const list = el('div', 'connectors-run-list')
-    for (const entry of logs) list.append(logRow(entry))
+    for (const entry of logs) list.append(logRow(entry, state))
     block.append(list)
     panel.append(block)
   }
@@ -331,17 +331,16 @@ function detailPanel(
   return panel
 }
 
-function logRow(entry: LogEntry) {
+function logRow(entry: LogEntry, state: ReturnType<typeof getState>) {
+  const summary = entry.undone
+    ? 'Undone'
+    : entry.success
+      ? labelPathText(entry.action, state.pathVariables)
+      : (entry.error ?? 'Failed')
   const row = el('div', `connectors-run-row ${entry.success ? 'ok' : 'fail'}`)
   row.append(
     el('span', 'connectors-run-time', [relativeTime(entry.at)]),
-    el('span', 'connectors-run-summary', [
-      entry.undone
-        ? 'Undone'
-        : entry.success
-          ? entry.action
-          : entry.error ?? 'Failed',
-    ]),
+    el('span', 'connectors-run-summary', [summary]),
   )
   return row
 }
@@ -356,9 +355,7 @@ function fact(label: string, value: string) {
 }
 
 function logoTile(connector: Connector) {
-  const tile = el('span', `connector-logo tone-${connector.id}`)
-  tile.innerHTML = connectorLogo(connector.id)
-  return tile
+  return connectorIconTile(connector.id)
 }
 
 function statusLabel(status: Connector['authStatus']) {
@@ -371,10 +368,10 @@ function statusLabel(status: Connector['authStatus']) {
 function statusAction(
   connector: Connector,
   refresh: () => void,
-  compact: boolean,
 ) {
   if (connector.authStatus === 'connected') {
-    const btn = button('connector-action connected pill', 'Connected')
+    const btn = button('btn btn-ghost btn-compact', 'Connected')
+    btn.type = 'button'
     btn.addEventListener('click', () => {
       disconnectConnector(connector.id)
       refresh()
@@ -384,23 +381,17 @@ function statusAction(
   }
 
   if (connector.authStatus === 'expired' || connector.authStatus === 'error') {
-    const wrap = el('div', 'connector-action-group')
-    const reconnect = button('connector-action pill', 'Reconnect')
+    const reconnect = button('btn btn-ghost btn-compact', 'Reconnect')
+    reconnect.type = 'button'
     reconnect.addEventListener('click', () => {
       connectConnector(connector.id)
       refresh()
     })
-    if (!compact) {
-      const prompt = button('connector-action ghost pill', 'Prompt')
-      prompt.addEventListener('click', () => triggerAuthExpired(connector.id))
-      wrap.append(reconnect, prompt)
-    } else {
-      wrap.append(reconnect)
-    }
-    return wrap
+    return reconnect
   }
 
-  const connect = button('connector-action pill', 'Connect')
+  const connect = button('btn btn-ghost btn-compact', 'Connect')
+  connect.type = 'button'
   connect.addEventListener('click', () => {
     connectConnector(connector.id)
     refresh()
@@ -408,15 +399,3 @@ function statusAction(
   return connect
 }
 
-function pillBtn(
-  label: string,
-  tone: 'primary' | 'ghost',
-  onClick: () => void,
-) {
-  const btn = button(
-    `connector-action pill${tone === 'primary' ? ' primary' : ' ghost'}`,
-    label,
-  )
-  btn.addEventListener('click', onClick)
-  return btn
-}

@@ -1,16 +1,17 @@
 import { el, button } from '@/lib/dom'
 import { PageToolbar } from '@/components/shared/PageToolbar'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { connectorLogo } from '@/lib/connectorLogos'
+import { SelectField } from '@/components/shared/FilterBar'
+import { connectorIconTile } from '@/lib/connectorLogos'
+import { labelPathText } from '@/lib/pathVariables'
 import {
-  createRule,
   getState,
   navigate,
   promoteRule,
   seedTemplateRule,
   updateRule,
 } from '@/app/store'
-import type { Rule, RuleMode } from '@/types/domain'
+import type { PathVariable, Rule, RuleMode } from '@/types/domain'
 
 type RulesFilter = 'all' | RuleMode
 
@@ -38,7 +39,6 @@ const MODE_COPY: Record<
 export function RulesEditor() {
   const page = el('div', 'screen settings-screen')
   let filter: RulesFilter = 'all'
-  let creating = false
   let selectedId: string | null = null
   const body = el('div', 'screen-body rules-page')
 
@@ -57,19 +57,13 @@ export function RulesEditor() {
         ? state.rules
         : state.rules.filter((r) => r.mode === filter)
 
-    if (!creating && !visible.some((r) => r.id === selectedId)) {
+    if (!visible.some((r) => r.id === selectedId)) {
       selectedId = visible[0]?.id ?? null
     }
     const selected = visible.find((r) => r.id === selectedId) ?? null
 
-    const createBtn = button(
-      creating ? 'btn btn-ghost' : 'btn btn-primary',
-      creating ? 'Cancel' : 'New rule',
-    )
-    createBtn.addEventListener('click', () => {
-      creating = !creating
-      render()
-    })
+    const createBtn = button('btn btn-ghost btn-compact', 'New rule')
+    createBtn.addEventListener('click', () => navigate('rule-new'))
 
     page.replaceChildren()
     body.replaceChildren()
@@ -99,7 +93,7 @@ export function RulesEditor() {
       body.append(el('div', 'rules-filter-hint', [MODE_COPY[filter].help]))
     }
 
-    if (suggestions.length && !creating) {
+    if (suggestions.length) {
       const banner = button('rules-promote-banner')
       banner.type = 'button'
       banner.append(
@@ -116,23 +110,6 @@ export function RulesEditor() {
         render()
       })
       body.append(banner)
-    }
-
-    if (creating) {
-      body.append(
-        CreateRuleForm(
-          () => {
-            creating = false
-            render()
-          },
-          () => {
-            creating = false
-            render()
-          },
-        ),
-      )
-      page.append(body)
-      return
     }
 
     if (!state.rules.length) {
@@ -171,6 +148,7 @@ export function RulesEditor() {
       table.append(
         ruleTableRow(
           rule,
+          state.pathVariables,
           rule.id === selectedId,
           () => {
             selectedId = rule.id
@@ -191,10 +169,12 @@ export function RulesEditor() {
       promote.append(el('div', 'dashboard-section-title', ['Ready to auto']))
       const list = el('div', 'rules-promote-list')
       for (const rule of suggestions.slice(0, 3)) {
-        list.append(promoteSideRow(rule, render, () => {
-          selectedId = rule.id
-          render()
-        }))
+        list.append(
+          promoteSideRow(rule, state.pathVariables, render, () => {
+            selectedId = rule.id
+            render()
+          }),
+        )
       }
       promote.append(list)
       side.append(promote)
@@ -224,6 +204,7 @@ function headRow() {
 
 function ruleTableRow(
   rule: Rule,
+  pathVariables: PathVariable[],
   selected: boolean,
   onSelect: () => void,
 ) {
@@ -235,16 +216,17 @@ function ruleTableRow(
   row.type = 'button'
 
   const actionCell = el('div', 'log-cell rules-table-action-cell')
-  const logo = el('span', `connector-logo compact tone-${rule.connectorId}`)
-  logo.innerHTML = connectorLogo(rule.connectorId)
+  const logo = connectorIconTile(rule.connectorId, true)
   actionCell.append(
     logo,
-    el('span', 'rules-table-action-name', [friendlyAction(rule.action)]),
+    el('span', 'rules-table-action-name', [
+      friendlyAction(rule.action, pathVariables),
+    ]),
   )
 
   row.append(
     actionCell,
-    cell(rule.trigger),
+    cell(labelPathText(rule.trigger, pathVariables)),
     cell(MODE_COPY[rule.mode].short),
     cell(
       rule.origin === 'learned' ? `Learned · ${rule.approvalCount}×` : 'You',
@@ -264,38 +246,32 @@ function detailPanel(
 
   const panel = el('section', 'rules-detail')
   const head = el('div', 'rules-detail-head')
-  const logo = el('span', `connector-logo tone-${rule.connectorId}`)
-  logo.innerHTML = connectorLogo(rule.connectorId)
+  const logo = connectorIconTile(rule.connectorId)
   const copy = el('div', 'rules-detail-copy')
+  const vars = state.pathVariables
   copy.append(
-    el('div', 'rules-detail-title', [friendlyAction(rule.action)]),
+    el('div', 'rules-detail-title', [friendlyAction(rule.action, vars)]),
     el('div', 'rules-detail-meta', [
-      `${MODE_COPY[rule.mode].label} · ${
-        rule.origin === 'learned' ? `Learned · ${rule.approvalCount}×` : 'Created by you'
-      }`,
+      [
+        connector?.name ?? rule.connectorId,
+        rule.origin === 'learned' ? `Learned · ${rule.approvalCount}×` : 'Yours',
+      ].join(' · '),
     ]),
   )
   head.append(logo, copy)
   panel.append(head)
 
-  panel.append(
-    el('div', 'rules-detail-intro', [
-      'When the event below happens and the match fits, Emmi follows this rule.',
-    ]),
-  )
-
   const facts = el('div', 'rules-detail-facts')
   facts.append(
-    fact('When', rule.trigger),
-    fact('Match', rule.match),
-    fact('Then', rule.action),
-    fact('Connector', connector?.name ?? rule.connectorId),
+    fact('When', labelPathText(rule.trigger, vars)),
+    fact('Match', labelPathText(rule.match, vars)),
+    fact('Then', labelPathText(rule.action, vars)),
   )
   panel.append(facts)
 
   const modeBlock = el('div', 'rule-mode-picker')
   modeBlock.append(
-    el('div', 'review-report-label', ['How should Emmi handle this?']),
+    el('div', 'review-report-label', ['Handle']),
     modeChoices(rule.mode, (mode) => {
       updateRule(rule.id, { mode })
       refresh()
@@ -321,21 +297,14 @@ function detailPanel(
   if (pending.length) {
     const block = el('div', 'rules-detail-block')
     block.append(
-      el('div', 'dashboard-section-title', ['In review']),
       el('div', 'rules-detail-note', [
-        `${pending.length} pending item${pending.length === 1 ? '' : 's'} from this rule.`,
+        `${pending.length} in review`,
       ]),
-      pillBtn('Open Review', 'ghost', () => navigate('review')),
     )
-    panel.append(block)
-  }
-
-  if (connector) {
-    const block = el('div', 'rules-detail-block')
-    block.append(
-      el('div', 'dashboard-section-title', ['Connector']),
-      pillBtn(connector.name, 'ghost', () => navigate('connectors')),
-    )
+    const openReview = button('btn btn-ghost btn-compact', 'Open Review')
+    openReview.type = 'button'
+    openReview.addEventListener('click', () => navigate('review'))
+    block.append(openReview)
     panel.append(block)
   }
 
@@ -344,6 +313,7 @@ function detailPanel(
 
 function promoteSideRow(
   rule: Rule,
+  pathVariables: PathVariable[],
   refresh: () => void,
   onSelect: () => void,
 ) {
@@ -351,7 +321,9 @@ function promoteSideRow(
   const copy = button('rules-promote-copy-btn')
   copy.type = 'button'
   copy.append(
-    el('div', 'rules-promote-title', [friendlyAction(rule.action)]),
+    el('div', 'rules-promote-title', [
+      friendlyAction(rule.action, pathVariables),
+    ]),
     el('div', 'rules-promote-meta', [
       `Approved ${rule.approvalCount}×`,
     ]),
@@ -365,123 +337,25 @@ function promoteSideRow(
   return row
 }
 
-function CreateRuleForm(onDone: () => void, onCancel: () => void) {
-  const state = getState()
-  const form = el('div', 'rule-create')
-  form.append(
-    el('div', 'rule-create-lead', [
-      'Describe when it should run, what to look for, and what to do. You can keep it on “Ask me first” until you’re comfortable.',
-    ]),
-  )
-
-  const trigger = textField(
-    'When should this run?',
-    'Example: a new file appears on your Desktop',
-    'File created in ~/Desktop',
-  )
-  const match = textField(
-    'What should it match?',
-    'Example: PNG files with “screenshot” in the name',
-    '*.png AND filename contains "screenshot"',
-  )
-  const action = textField(
-    'What should it do?',
-    'Example: move the file into Pictures/Screenshots',
-    'Move → ~/Pictures/Screenshots',
-  )
-
-  let modeValue: RuleMode = 'ask'
-  const modeBlock = el('div', 'rule-create-field')
-  modeBlock.append(
-    el('div', 'review-report-label', ['How should Emmi handle matches?']),
-    modeChoices(modeValue, (next) => {
-      modeValue = next
-    }),
-  )
-
-  const connectorBlock = el('div', 'rule-create-field')
-  connectorBlock.append(
-    el('div', 'review-report-label', ['Which connector?']),
-    el('div', 'rule-create-hint', [
-      'Connectors are the apps and folders Emmi can work with.',
-    ]),
-  )
-  const connector = el('select', 'rule-create-select') as HTMLSelectElement
-  for (const item of state.connectors) {
-    const opt = el('option') as HTMLOptionElement
-    opt.value = item.id
-    opt.textContent = item.name
-    if (item.id === state.connectors[0]?.id) opt.selected = true
-    connector.append(opt)
-  }
-  connectorBlock.append(connector)
-
-  const actions = el('div', 'rule-create-actions')
-  actions.append(
-    pillBtn('Cancel', 'ghost', onCancel),
-    pillBtn('Create rule', 'primary', () => {
-      createRule({
-        trigger: trigger.input.value.trim() || trigger.fallback,
-        match: match.input.value.trim() || match.fallback,
-        action: action.input.value.trim() || action.fallback,
-        mode: modeValue,
-        connectorId: connector.value,
-        origin: 'user',
-      })
-      onDone()
-    }),
-  )
-
-  form.append(
-    trigger.field,
-    match.field,
-    action.field,
-    modeBlock,
-    connectorBlock,
-    actions,
-  )
-  return form
-}
-
-function textField(label: string, hint: string, fallback: string) {
-  const field = el('div', 'rule-create-field')
-  field.append(
-    el('div', 'review-report-label', [label]),
-    el('div', 'rule-create-hint', [hint]),
-  )
-  const input = el('input', 'rule-create-input') as HTMLInputElement
-  input.placeholder = fallback
-  field.append(input)
-  return { field, input, fallback }
-}
-
 function modeChoices(current: RuleMode, onChange: (mode: RuleMode) => void) {
-  const wrap = el('div', 'rule-mode-choices')
-  for (const value of ['ask', 'review', 'auto'] as RuleMode[]) {
-    const copy = MODE_COPY[value]
-    const choice = button(
-      `rule-mode-choice${current === value ? ' active' : ''}`,
-    )
-    choice.type = 'button'
-    choice.append(
-      el('div', 'rule-mode-choice-title', [copy.label]),
-      el('div', 'rule-mode-choice-help', [copy.help]),
-    )
-    choice.addEventListener('click', () => {
-      onChange(value)
-      for (const child of wrap.children) {
-        child.classList.toggle('active', child === choice)
-      }
-    })
-    wrap.append(choice)
-  }
-  return wrap
+  const control = SelectField({
+    label: 'Handle',
+    value: current,
+    options: (['ask', 'review', 'auto'] as RuleMode[]).map((value) => ({
+      value,
+      label: MODE_COPY[value].label,
+    })),
+    onChange: (v) => onChange(v as RuleMode),
+  })
+  control.classList.add('settings-select')
+  return control
 }
 
-function friendlyAction(action: string) {
-  return action
-    .replace(/^Move\s*→\s*/i, 'Move to ')
-    .replace(/^Run automation\s+/i, 'Run ')
+function friendlyAction(action: string, pathVariables: PathVariable[]) {
+  return labelPathText(
+    action.replace(/^Run automation\s+/i, 'Run '),
+    pathVariables,
+  )
 }
 
 function fact(label: string, value: string) {

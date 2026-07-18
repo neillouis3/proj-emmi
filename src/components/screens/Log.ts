@@ -4,7 +4,8 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { FilterBar } from '@/components/shared/FilterBar'
 import { relativeTime } from '@/lib/format'
 import { icons } from '@/lib/icons'
-import { connectorLogo } from '@/lib/connectorLogos'
+import { connectorIconTile } from '@/lib/connectorLogos'
+import { labelPathText } from '@/lib/pathVariables'
 import {
   getState,
   navigate,
@@ -18,7 +19,6 @@ export function Log() {
   let search = ''
   let resultFilter = 'all'
   let rangeFilter = 'all'
-  let connectorFilter = 'all'
   let selectedId: string | null = null
   const body = el('div', 'screen-body log-page')
 
@@ -40,9 +40,6 @@ export function Log() {
     if (resultFilter === 'success') items = items.filter((l) => l.success && !l.undone)
     if (resultFilter === 'failure') items = items.filter((l) => !l.success)
     if (resultFilter === 'undone') items = items.filter((l) => l.undone)
-    if (connectorFilter !== 'all') {
-      items = items.filter((l) => l.connectorId === connectorFilter)
-    }
     if (rangeFilter === '24h') {
       items = items.filter((l) => now - +new Date(l.at) <= 24 * 3600_000)
     } else if (rangeFilter === '7d') {
@@ -60,17 +57,6 @@ export function Log() {
     body.append(
       PageToolbar({
         leading: [
-          filterTabs(
-            [
-              { value: 'all', label: 'All' },
-              ...state.connectors.map((c) => ({ value: c.id, label: c.name })),
-            ],
-            connectorFilter,
-            (next) => {
-              connectorFilter = next
-              render()
-            },
-          ),
           FilterBar([
             {
               type: 'search',
@@ -148,6 +134,7 @@ export function Log() {
       table.append(
         logTableRow(
           entry,
+          state,
           entry.id === selectedId,
           () => {
             selectedId = entry.id
@@ -183,6 +170,7 @@ function headRow() {
 
 function logTableRow(
   entry: LogEntry,
+  state: ReturnType<typeof getState>,
   selected: boolean,
   onSelect: () => void,
   refresh: () => void,
@@ -224,7 +212,7 @@ function logTableRow(
   row.append(
     cell(relativeTime(entry.at), 'log-cell-time'),
     cell(entry.automationName),
-    cell(entry.action),
+    cell(labelPathText(entry.action, state.pathVariables)),
     cell(result, entry.undone ? '' : entry.success ? 'ok' : 'fail'),
     actionCell,
   )
@@ -244,8 +232,7 @@ function detailPanel(
 
   const panel = el('section', 'log-detail')
   const head = el('div', 'log-detail-head')
-  const logo = el('span', `connector-logo tone-${entry.connectorId}`)
-  logo.innerHTML = connectorLogo(entry.connectorId)
+  const logo = connectorIconTile(entry.connectorId)
   const copy = el('div', 'log-detail-copy')
   copy.append(
     el('div', 'log-detail-title', [entry.automationName]),
@@ -276,14 +263,14 @@ function detailPanel(
   const actions = el('div', 'log-detail-actions')
   if (entry.reversible && !entry.undone) {
     actions.append(
-      textBtn('Undo', false, () => {
+      textBtn('Undo', true, () => {
         undoLog(entry.id)
         refresh()
       }),
     )
   } else if (!entry.success) {
     actions.append(
-      textBtn('Retry', false, () => {
+      textBtn('Retry', true, () => {
         retryLog(entry.id)
         refresh()
       }),
@@ -301,10 +288,11 @@ function detailPanel(
   }
   if (actions.childNodes.length) panel.append(actions)
 
+  const vars = state.pathVariables
   const facts = el('div', 'log-detail-facts')
   facts.append(
-    fact('Summary', entry.summary),
-    fact('Action', entry.action),
+    fact('Summary', labelPathText(entry.summary, vars)),
+    fact('Action', labelPathText(entry.action, vars)),
     fact('Connector', connector?.name ?? entry.connectorId),
     fact('Reversible', entry.reversible ? 'Yes' : 'No'),
   )
@@ -331,7 +319,9 @@ function detailPanel(
       )
       row.append(
         el('span', 'log-related-time', [relativeTime(item.at)]),
-        el('span', 'log-related-summary', [item.action]),
+        el('span', 'log-related-summary', [
+          labelPathText(item.action, vars),
+        ]),
       )
       list.append(row)
     }
@@ -353,23 +343,6 @@ function fact(label: string, value: string) {
 
 function cell(text: string, extra = '') {
   return el('div', `log-cell ${extra}`.trim(), [text])
-}
-
-function filterTabs(
-  options: { value: string; label: string }[],
-  current: string,
-  onChange: (value: string) => void,
-) {
-  const bar = el('div', 'connector-tabs')
-  for (const option of options) {
-    const tab = button(
-      `connector-tab${option.value === current ? ' active' : ''}`,
-      option.label,
-    )
-    tab.addEventListener('click', () => onChange(option.value))
-    bar.append(tab)
-  }
-  return bar
 }
 
 function textBtn(label: string, ghost: boolean, onClick: () => void) {

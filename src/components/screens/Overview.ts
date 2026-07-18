@@ -2,7 +2,8 @@ import { el, button } from '@/lib/dom'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { relativeTime } from '@/lib/format'
 import { icons } from '@/lib/icons'
-import { connectorLogo } from '@/lib/connectorLogos'
+import { connectorIconTile } from '@/lib/connectorLogos'
+import { labelPathText } from '@/lib/pathVariables'
 import {
   approvePending,
   counts,
@@ -51,7 +52,7 @@ export function Overview() {
     health.append(healthLeft)
 
     if (state.daemonStatus === 'crashed' || state.daemonStatus === 'stopped') {
-      const restart = button('connector-action pill primary', 'Restart')
+      const restart = button('btn btn-ghost btn-compact', 'Restart')
       restart.addEventListener('click', () => {
         restartDaemon()
         render()
@@ -155,6 +156,9 @@ export function Overview() {
       side.append(promoteSection)
     }
 
+    split.append(reviewSection, side)
+    body.append(split)
+
     const shortcuts = el('section', 'dashboard-section')
     shortcuts.append(
       el('div', 'dashboard-section-head', [
@@ -163,18 +167,15 @@ export function Overview() {
     )
     const links = el('div', 'dashboard-shortcuts')
     links.append(
-      shortcutBtn('New automation', icons.spark, () =>
-        window.emmi.openPanel?.('automation-new'),
+      shortcutBtn('New automation', icons.bolt, () =>
+        navigate('automation-new'),
       ),
-      shortcutBtn('New rule', icons.rules, () => navigate('rules')),
+      shortcutBtn('New rule', icons.rules, () => navigate('rule-new')),
       shortcutBtn('Connectors', icons.plug, () => navigate('connectors')),
-      shortcutBtn('Open log', icons.history, () => navigate('log')),
+      shortcutBtn('Open logs', icons.history, () => navigate('log')),
     )
     shortcuts.append(links)
-    side.append(shortcuts)
-
-    split.append(reviewSection, side)
-    body.append(split)
+    body.append(shortcuts)
 
     const activity = el('section', 'dashboard-section')
     const activityHead = el('div', 'dashboard-section-head')
@@ -212,7 +213,9 @@ export function Overview() {
     } else {
       const table = el('div', 'log-table dashboard-activity-table')
       table.append(activityHeadRow())
-      for (const run of runs) table.append(activityTableRow(run))
+      for (const run of runs) {
+        table.append(activityTableRow(run, state.pathVariables))
+      }
       activity.append(table)
     }
 
@@ -231,7 +234,7 @@ function automationRow(automation: Automation, refresh: () => void) {
     el('div', 'dashboard-side-title', [automation.name]),
     el('div', 'dashboard-side-meta', [
       automation.lastRunAt
-        ? `Ran ${relativeTime(automation.lastRunAt)}`
+        ? `Last ran ${relativeTime(automation.lastRunAt)}`
         : automation.triggerSummary,
     ]),
   )
@@ -250,8 +253,7 @@ function automationRow(automation: Automation, refresh: () => void) {
 
 function promoteRow(rule: Rule, refresh: () => void) {
   const row = el('div', 'dashboard-side-row')
-  const logo = el('span', `connector-logo compact tone-${rule.connectorId}`)
-  logo.innerHTML = connectorLogo(rule.connectorId)
+  const logo = connectorIconTile(rule.connectorId, true)
   const copy = el('div', 'dashboard-side-copy')
   copy.append(
     el('div', 'dashboard-side-title', [rule.action]),
@@ -323,7 +325,10 @@ function activityHeadRow() {
   return row
 }
 
-function activityTableRow(run: RecentRun) {
+function activityTableRow(
+  run: RecentRun,
+  pathVariables: ReturnType<typeof getState>['pathVariables'],
+) {
   const resultClass =
     run.kind === 'completed' ? 'ok' : run.kind === 'failed' ? 'fail' : 'pending'
   const row = button(`log-table-row dashboard-activity-table-row ${resultClass}`)
@@ -331,7 +336,7 @@ function activityTableRow(run: RecentRun) {
   row.append(
     activityCell(relativeTime(run.at), 'log-cell-time'),
     activityCell(run.title),
-    activityCell(run.detail),
+    activityCell(labelPathText(run.detail, pathVariables)),
     activityCell(kindLabel(run.kind), resultClass),
   )
   row.addEventListener('click', () => {

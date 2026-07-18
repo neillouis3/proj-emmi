@@ -1,13 +1,16 @@
 {
-  "name": "proj-emmi",
-  "version": "0.1.0",
+  "name": "emmi",
+  "productName": "Emmi",
+  "version": "0.2.0",
   "private": true,
-  "description": "Electron app",
+  "description": "Emmi — local automation",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "ELECTRON_RUN_AS_NODE= vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "postinstall": "node scripts/name-electron-app.mjs",
+    "name-app": "node scripts/name-electron-app.mjs"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

@@ -8,6 +8,7 @@ import folderSvg from 'heroicons/20/solid/folder.svg?raw'
 import chevronDownSvg from 'heroicons/20/solid/chevron-down.svg?raw'
 import chevronRightSvg from 'heroicons/20/solid/chevron-right.svg?raw'
 import chevronUpSvg from 'heroicons/20/solid/chevron-up.svg?raw'
+import chevronUpDownSvg from 'heroicons/20/solid/chevron-up-down.svg?raw'
 import branchSvg from 'heroicons/20/solid/share.svg?raw'
 import laptopSvg from 'heroicons/20/solid/computer-desktop.svg?raw'
 import micSvg from 'heroicons/20/solid/microphone.svg?raw'
@@ -37,10 +38,20 @@ import stopSvg from 'heroicons/20/solid/stop.svg?raw'
 import refreshSvg from 'heroicons/20/solid/arrow-path.svg?raw'
 import bellSvg from 'heroicons/20/solid/bell.svg?raw'
 import adjustmentsSvg from 'heroicons/20/solid/adjustments-horizontal.svg?raw'
+import keySvg from 'heroicons/20/solid/key.svg?raw'
+import shieldCheckSvg from 'heroicons/20/solid/shield-check.svg?raw'
+import boltSvg from 'heroicons/20/solid/bolt.svg?raw'
 import pauseSvg from 'heroicons/20/solid/pause.svg?raw'
-import pencilSvg from 'heroicons/20/solid/pencil-square.svg?raw'
+import pencilSvg from 'heroicons/20/solid/pencil.svg?raw'
+import paintBrushSvg from 'heroicons/20/solid/paint-brush.svg?raw'
+import swatchSvg from 'heroicons/20/solid/swatch.svg?raw'
 import cloudSvg from 'heroicons/20/solid/cloud.svg?raw'
 import cpuChipSvg from 'heroicons/20/solid/cpu-chip.svg?raw'
+import userCircleSvg from 'heroicons/20/solid/user-circle.svg?raw'
+import userSvg from 'heroicons/20/solid/user.svg?raw'
+import checkBadgeSvg from 'heroicons/20/solid/check-badge.svg?raw'
+import identificationSvg from 'heroicons/20/solid/identification.svg?raw'
+import musicalNoteSvg from 'heroicons/20/solid/musical-note.svg?raw'
 
 function icon(svg: string, size = 16) {
   return svg.replace(/<svg([^>]*)>/, (_, attrs: string) => {
@@ -60,6 +71,7 @@ export const icons = {
   folder: icon(folderSvg, 14),
   chevronDown: icon(chevronDownSvg, 14),
   chevronUp: icon(chevronUpSvg, 14),
+  chevronUpDown: icon(chevronUpDownSvg, 14),
   chevronRight: icon(chevronRightSvg, 12),
   branch: icon(branchSvg, 14),
   laptop: icon(laptopSvg, 14),
@@ -90,9 +102,20 @@ export const icons = {
   refresh: icon(refreshSvg),
   bell: icon(bellSvg),
   adjustments: icon(adjustmentsSvg),
+  key: icon(keySvg, 14),
+  shield: icon(shieldCheckSvg, 14),
+  bolt: icon(boltSvg, 14),
   pause: icon(pauseSvg),
-  pencil: icon(pencilSvg),
+  pencil: icon(pencilSvg, 14),
+  paint: icon(paintBrushSvg, 14),
+  swatch: icon(swatchSvg, 14),
+  typography: `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><text x="8" y="12" text-anchor="middle" font-size="11" font-weight="600" font-family="ui-sans-serif, system-ui, sans-serif" letter-spacing="-0.04em">Aa</text></svg>`,
   cloud: icon(cloudSvg, 14),
   cpu: icon(cpuChipSvg, 14),
+  user: icon(userSvg, 14),
+  userCircle: icon(userCircleSvg, 14),
+  checkBadge: icon(checkBadgeSvg, 14),
+  id: icon(identificationSvg, 14),
+  music: icon(musicalNoteSvg, 14),
   apple: `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.7 12.6c0-2.1 1.7-3.1 1.8-3.2-1-1.4-2.5-1.6-3-1.7-1.3-.1-2.5.8-3.1.8-.7 0-1.7-.7-2.8-.7-1.4 0-2.8.9-3.5 2.2-1.5 2.6-.4 6.5 1.1 8.6.7 1 1.5 2.2 2.6 2.1 1 0 1.4-.7 2.7-.7 1.2 0 1.6.7 2.7.7 1.1 0 1.9-1 2.6-2 .8-1.2 1.1-2.3 1.1-2.4-.1 0-2.1-.8-2.2-3.3zm-2-6.1c.6-.7 1-1.7.9-2.7-1 .1-2.1.6-2.7 1.4-.6.7-1.1 1.7-1 2.7 1 .1 2-.6 2.8-1.4z"/></svg>`,
 }

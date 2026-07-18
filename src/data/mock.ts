@@ -1,4 +1,6 @@
 import type { AppState } from '@/types/domain'
+import { defaultPathVariables } from '@/lib/pathVariables'
+import { createDefaultSystemKeybinds } from '@/lib/systemKeybinds'
 
 export function createInitialState(): AppState {
   const now = Date.now()
@@ -18,6 +20,28 @@ export function createInitialState(): AppState {
       hideInFullscreen: true,
       openDashboardOnLaunch: false,
       keepRunningInBackground: true,
+      confirmBeforeQuit: true,
+      showMenuBarTitle: true,
+      showInDock: true,
+    },
+    appearance: {
+      accentHue: 210,
+      accentIntensity: 0,
+      reduceTransparency: false,
+      uiFontSize: 13,
+      uiFontFamily: 'sf-pro',
+      fontSmoothing: true,
+      reduceMotion: false,
+    },
+    account: {
+      firstName: 'Neil',
+      lastName: 'Louis',
+      email: 'neil@local.dev',
+      handle: 'neillouis3',
+      avatarDataUrl: null,
+      license: 'pro',
+      licenseLabel: 'Pro',
+      memberSince: '2026-01-12',
     },
     notifications: {
       menuBarBadge: true,
@@ -25,12 +49,32 @@ export function createInitialState(): AppState {
       soundEnabled: true,
       notifyOnFailure: true,
       notifyOnReview: true,
+      notifyOnSuccess: false,
+      quietHoursEnabled: false,
+    },
+    automationsPrefs: {
+      confirmDestructiveActions: true,
+      requireReviewForDeletes: true,
+      pauseWhenAsleep: true,
+      pauseOnBattery: false,
+      autoPromoteAfter: 5,
+      maxConcurrentRuns: 3,
     },
     other: {
       checkForUpdates: true,
       shareUsageData: false,
       keepDetailedLogs: true,
+      verboseDaemonLogs: false,
+      showExperimentalConnectors: false,
+      clearLogsAfterDays: 30,
+      allowCloudConnectors: true,
     },
+    keybinds: {
+      enabled: true,
+      appFocusedOnly: false,
+    },
+    systemKeybinds: createDefaultSystemKeybinds(),
+    pathVariables: defaultPathVariables(),
     pending: [
       {
         id: 'p1',
@@ -72,7 +116,7 @@ export function createInitialState(): AppState {
         id: 'r-screenshots',
         trigger: 'File created in ~/Desktop',
         match: '*.png AND filename contains "screenshot"',
-        action: 'Move → ~/Pictures/Screenshots',
+        action: 'Move to ~/Pictures/Screenshots',
         mode: 'review',
         connectorId: 'fs',
         origin: 'learned',
@@ -99,6 +143,8 @@ export function createInitialState(): AppState {
         active: true,
         trigger: 'manual',
         triggerSummary: 'manual (menu bar)',
+        keybind: 'CommandOrControl+Shift+D',
+        keybindEnabled: true,
         lastRunAt: new Date(now - 10 * 60_000).toISOString(),
         defaultMode: 'review',
         steps: [
@@ -129,6 +175,8 @@ export function createInitialState(): AppState {
         active: true,
         trigger: 'cli',
         triggerSummary: 'CLI command',
+        keybind: null,
+        keybindEnabled: true,
         lastRunAt: new Date(now - 3 * 3600_000).toISOString(),
         defaultMode: 'review',
         steps: [
@@ -144,6 +192,8 @@ export function createInitialState(): AppState {
         active: true,
         trigger: 'manual',
         triggerSummary: 'manual (menu bar)',
+        keybind: 'CommandOrControl+Shift+S',
+        keybindEnabled: true,
         lastRunAt: new Date(now - 2 * 3600_000).toISOString(),
         defaultMode: 'ask',
         steps: [
@@ -226,8 +276,8 @@ export function createInitialState(): AppState {
         id: 'l5',
         at: new Date(now - 28 * 3600_000).toISOString(),
         automationName: 'Clean Desktop',
-        summary: 'Moved screenshot.png → Screenshots',
-        action: 'Moved screenshot.png → Screenshots',
+        summary: 'Moved screenshot.png to Screenshots',
+        action: 'Moved screenshot.png to Screenshots',
         connectorId: 'fs',
         success: true,
         reversible: true,

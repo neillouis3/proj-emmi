@@ -10,7 +10,7 @@ export function SectionBlock(opts: {
   const header = el('div', 'settings-block-header')
 
   if (opts.icon && opts.tone) {
-    const tile = el('span', `settings-block-icon tone-${opts.tone}`)
+    const tile = el('span', `app-icon-tile settings-block-icon tone-${opts.tone}`)
     tile.innerHTML = opts.icon
     header.append(tile)
   }

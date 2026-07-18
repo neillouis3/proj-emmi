@@ -15,10 +15,16 @@ const TITLES: Record<ScreenId, string> = {
   overview: 'Dashboard',
   review: 'Review Queue',
   automations: 'Automations',
+  'automation-new': 'New Automation',
   connectors: 'Connectors',
-  log: 'Log',
+  log: 'Logs',
   rules: 'Rules',
+  'rule-new': 'New Rule',
+  keybinds: 'Keybinds',
+  appearance: 'Appearance',
+  'path-variables': 'Path Variables',
   settings: 'Settings',
+  account: 'Account',
 }
 
 export function WorkspaceHeader() {

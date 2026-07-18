@@ -1,10 +1,10 @@
 import { el, button } from '@/lib/dom'
 import { PageToolbar } from '@/components/shared/PageToolbar'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { FilterBar } from '@/components/shared/FilterBar'
 import { relativeTime } from '@/lib/format'
 import { icons } from '@/lib/icons'
-import { connectorLogo } from '@/lib/connectorLogos'
+import { connectorIconTile } from '@/lib/connectorLogos'
+import { labelPathText } from '@/lib/pathVariables'
 import {
   alwaysDoThis,
   approveAll,
@@ -19,23 +19,14 @@ import type { PendingAction } from '@/types/domain'
 
 export function ReviewQueue() {
   const page = el('div', 'screen settings-screen')
-  let connectorFilter = 'all'
-  let automationFilter = 'all'
   let selectedId: string | null = null
   const body = el('div', 'screen-body review-page')
 
   const render = () => {
     const state = getState()
-    const allPending = [...state.pending].sort(
+    const items = [...state.pending].sort(
       (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt),
     )
-    let items = allPending
-    if (connectorFilter !== 'all') {
-      items = items.filter((i) => i.connectorId === connectorFilter)
-    }
-    if (automationFilter !== 'all') {
-      items = items.filter((i) => (i.automationId ?? 'none') === automationFilter)
-    }
 
     if (!items.some((i) => i.id === selectedId)) {
       selectedId = items[0]?.id ?? null
@@ -45,7 +36,7 @@ export function ReviewQueue() {
     const bulk =
       items.length > 1
         ? [
-            textBtn('Approve all', false, () => {
+            textBtn('Approve all', true, () => {
               approveAll(items.map((i) => i.id))
               render()
             }),
@@ -59,58 +50,17 @@ export function ReviewQueue() {
     page.replaceChildren()
     body.replaceChildren()
 
-    body.append(
-      PageToolbar({
-        leading: [
-          filterTabs(
-            [
-              { value: 'all', label: 'All' },
-              ...state.connectors.map((c) => ({ value: c.id, label: c.name })),
-            ],
-            connectorFilter,
-            (next) => {
-              connectorFilter = next
-              render()
-            },
-          ),
-          FilterBar([
-            {
-              type: 'select',
-              label: 'Automation',
-              value: automationFilter,
-              options: [
-                { value: 'all', label: 'All automations' },
-                ...state.automations.map((a) => ({ value: a.id, label: a.name })),
-              ],
-              onChange: (v) => {
-                automationFilter = v
-                render()
-              },
-            },
-          ]),
-        ],
-        actions: bulk,
-      }),
-    )
+    if (bulk) {
+      body.append(PageToolbar({ actions: bulk }))
+    }
 
-    if (!allPending.length) {
+    if (!items.length) {
       body.append(
         EmptyState({
           title: 'Nothing pending',
           body: 'Automations will show up here when they need a decision.',
           actionLabel: 'Open Automations',
           onAction: () => navigate('automations'),
-        }),
-      )
-      page.append(body)
-      return
-    }
-
-    if (!items.length) {
-      body.append(
-        EmptyState({
-          title: 'No matches',
-          body: 'Try another connector or automation filter.',
         }),
       )
       page.append(body)
@@ -168,8 +118,7 @@ function reviewTableRow(
   row.type = 'button'
 
   const itemCell = el('div', 'log-cell review-table-item-cell')
-  const logo = el('span', `connector-logo compact tone-${item.connectorId}`)
-  logo.innerHTML = connectorLogo(item.connectorId)
+  const logo = connectorIconTile(item.connectorId, true)
   itemCell.append(logo, el('span', 'review-table-item-name', [item.title]))
 
   const actions = el('div', 'log-cell log-cell-action')
@@ -189,7 +138,7 @@ function reviewTableRow(
   row.append(
     cell(relativeTime(item.createdAt), 'log-cell-time'),
     itemCell,
-    cell(item.action),
+    cell(labelPathText(item.action, state.pathVariables)),
     cell(automation?.name ?? 'Manual'),
     actions,
   )
@@ -208,8 +157,7 @@ function detailPanel(
 
   const panel = el('section', 'review-detail')
   const head = el('div', 'review-detail-head')
-  const logo = el('span', `connector-logo tone-${item.connectorId}`)
-  logo.innerHTML = connectorLogo(item.connectorId)
+  const logo = connectorIconTile(item.connectorId)
   const copy = el('div', 'review-detail-copy')
   copy.append(
     el('div', 'review-detail-title', [item.title]),
@@ -222,7 +170,7 @@ function detailPanel(
 
   const actions = el('div', 'review-detail-actions')
   actions.append(
-    textBtn('Approve', false, () => {
+    textBtn('Approve', true, () => {
       approvePending(item.id)
       refresh()
     }),
@@ -233,16 +181,17 @@ function detailPanel(
   )
   panel.append(actions)
 
+  const vars = state.pathVariables
   const facts = el('div', 'review-detail-facts')
   facts.append(
-    fact('Trigger', item.trigger),
-    fact('Proposed', item.action),
+    fact('Trigger', labelPathText(item.trigger, vars)),
+    fact('Proposed', labelPathText(item.action, vars)),
     fact('Automation', automation?.name ?? 'Manual'),
   )
   if (item.reasoning) facts.append(fact('Why', item.reasoning))
   if (rule) {
     facts.append(
-      fact('Rule', `${rule.mode} · ${rule.match}`),
+      fact('Rule', `${rule.mode} · ${labelPathText(rule.match, vars)}`),
     )
   }
   panel.append(facts)
@@ -258,20 +207,22 @@ function detailPanel(
   panel.append(editBlock)
 
   const extras = el('div', 'review-report-actions')
-  extras.append(
-    pillBtn('Always do this', 'ghost', () => {
-      const ok = confirm(
-        'Future matches like this will run automatically without asking. Continue?',
-      )
-      if (!ok) return
-      alwaysDoThis(item.id)
-      refresh()
-    }),
-  )
-  if (rule) {
-    extras.append(
-      pillBtn('Open Rules', 'ghost', () => navigate('rules')),
+  const always = button('btn btn-ghost btn-compact', 'Always do this')
+  always.type = 'button'
+  always.addEventListener('click', () => {
+    const ok = confirm(
+      'Future matches like this will run automatically without asking. Continue?',
     )
+    if (!ok) return
+    alwaysDoThis(item.id)
+    refresh()
+  })
+  extras.append(always)
+  if (rule) {
+    const openRules = button('btn btn-ghost btn-compact', 'Open Rules')
+    openRules.type = 'button'
+    openRules.addEventListener('click', () => navigate('rules'))
+    extras.append(openRules)
   }
   panel.append(extras)
 
@@ -289,36 +240,6 @@ function fact(label: string, value: string) {
 
 function cell(text: string, extra = '') {
   return el('div', `log-cell ${extra}`.trim(), [text])
-}
-
-function filterTabs(
-  options: { value: string; label: string }[],
-  current: string,
-  onChange: (value: string) => void,
-) {
-  const bar = el('div', 'connector-tabs')
-  for (const option of options) {
-    const tab = button(
-      `connector-tab${option.value === current ? ' active' : ''}`,
-      option.label,
-    )
-    tab.addEventListener('click', () => onChange(option.value))
-    bar.append(tab)
-  }
-  return bar
-}
-
-function pillBtn(
-  label: string,
-  tone: 'primary' | 'ghost',
-  onClick: () => void,
-) {
-  const btn = button(
-    `connector-action pill${tone === 'primary' ? ' primary' : ' ghost'}`,
-    label,
-  )
-  btn.addEventListener('click', onClick)
-  return btn
 }
 
 function iconBtn(

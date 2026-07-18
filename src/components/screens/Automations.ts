@@ -2,8 +2,10 @@ import { el, button } from '@/lib/dom'
 import { PageToolbar } from '@/components/shared/PageToolbar'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { relativeTime } from '@/lib/format'
+import { formatKeybind } from '@/lib/keybind'
 import { icons } from '@/lib/icons'
-import { connectorLogo } from '@/lib/connectorLogos'
+import { connectorIconTile } from '@/lib/connectorLogos'
+import { labelPathText } from '@/lib/pathVariables'
 import {
   getState,
   navigate,
@@ -34,10 +36,8 @@ export function Automations() {
 
     const pendingLinked = state.pending.filter((p) => p.automationId).length
 
-    const create = button('btn btn-primary', 'New Automation')
-    create.addEventListener('click', () =>
-      window.emmi.openPanel?.('automation-new'),
-    )
+    const create = button('btn btn-ghost btn-compact', 'New Automation')
+    create.addEventListener('click', () => navigate('automation-new'))
 
     page.replaceChildren()
     body.replaceChildren()
@@ -68,7 +68,7 @@ export function Automations() {
           title: 'No automations yet',
           body: 'Create one from here or the menu bar.',
           actionLabel: 'New Automation',
-          onAction: () => window.emmi.openPanel?.('automation-new'),
+          onAction: () => navigate('automation-new'),
         }),
       )
       page.append(body)
@@ -176,7 +176,11 @@ function automationTableRow(
 
   row.append(
     cell(automation.name),
-    cell(automation.triggerSummary),
+    cell(
+      automation.keybind && automation.keybindEnabled
+        ? `${automation.triggerSummary} · ${formatKeybind(automation.keybind)}`
+        : automation.triggerSummary,
+    ),
     cell(
       automation.active ? 'Active' : 'Paused',
       automation.active ? 'ok' : 'paused',
@@ -218,7 +222,9 @@ function detailPanel(
   }
 
   const actions = el('div', 'automation-detail-actions')
-  const run = textBtn('Run now', false, () => {
+  const run = button('btn btn-primary btn-compact', 'Run now')
+  run.type = 'button'
+  run.addEventListener('click', () => {
     runAutomation(automation.id)
     refresh()
   })
@@ -229,7 +235,7 @@ function detailPanel(
       toggleAutomation(automation.id)
       refresh()
     }),
-    textBtn('Edit', true, () => window.emmi.openPanel?.('automation-new')),
+    textBtn('Edit', true, () => navigate('automation-new')),
   )
   panel.append(actions)
 
@@ -241,23 +247,38 @@ function detailPanel(
       'Last run',
       automation.lastRunAt ? relativeTime(automation.lastRunAt) : 'Never',
     ),
-    fact('Steps', String(automation.steps.length)),
+    fact(
+      'Keybind',
+      state.keybinds.enabled
+        ? shortcutLabel(automation)
+        : `${shortcutLabel(automation)} · keybinds disabled`,
+    ),
   )
   panel.append(facts)
+
+  const keybindActions = el('div', 'automation-detail-row')
+  const manageKeybinds = button('btn btn-ghost btn-compact', 'Manage keybinds')
+  manageKeybinds.type = 'button'
+  manageKeybinds.addEventListener('click', () => navigate('keybinds'))
+  keybindActions.append(manageKeybinds)
+  panel.append(keybindActions)
 
   const steps = el('div', 'automation-detail-steps')
   steps.append(el('div', 'review-report-label', ['Steps']))
   const list = el('div', 'automation-step-cards')
   for (const [index, step] of automation.steps.entries()) {
     const row = el('div', 'automation-step-card')
-    const logo = el('span', `connector-logo compact tone-${step.connectorId}`)
-    logo.innerHTML = connectorLogo(step.connectorId)
+    const logo = connectorIconTile(step.connectorId, true)
     const stepCopy = el('div', 'automation-step-copy')
     stepCopy.append(
       el('div', 'automation-step-title', [
         `${index + 1}. ${step.operation}`,
       ]),
-      el('div', 'automation-step-meta', [step.params || 'No params']),
+      el('div', 'automation-step-meta', [
+        step.params
+          ? labelPathText(step.params, state.pathVariables)
+          : 'No params',
+      ]),
     )
     row.append(logo, stepCopy)
     list.append(row)
@@ -267,13 +288,18 @@ function detailPanel(
 
   if (pending.length) {
     const block = el('div', 'automation-detail-block')
-    block.append(
-      el('div', 'dashboard-section-title', ['In review']),
+    block.append(el('div', 'dashboard-section-title', ['In review']))
+    const row = el('div', 'automation-detail-row')
+    row.append(
       el('div', 'automation-detail-note', [
         `${pending.length} item${pending.length === 1 ? '' : 's'} waiting for approval.`,
       ]),
-      pillBtn('Open Review', 'ghost', () => navigate('review')),
     )
+    const openReview = button('btn btn-ghost btn-compact', 'Open Review')
+    openReview.type = 'button'
+    openReview.addEventListener('click', () => navigate('review'))
+    row.append(openReview)
+    block.append(row)
     panel.append(block)
   }
 
@@ -282,7 +308,7 @@ function detailPanel(
     block.append(el('div', 'dashboard-section-title', ['Recent runs']))
     const listEl = el('div', 'automation-run-list')
     for (const entry of logs) {
-      listEl.append(logRow(entry))
+      listEl.append(logRow(entry, state))
     }
     block.append(listEl)
     panel.append(block)
@@ -291,13 +317,16 @@ function detailPanel(
   return panel
 }
 
-function logRow(entry: LogEntry) {
+function logRow(entry: LogEntry, state: ReturnType<typeof getState>) {
+  const summary = entry.undone
+    ? 'Undone'
+    : entry.success
+      ? labelPathText(entry.action, state.pathVariables)
+      : (entry.error ?? 'Failed')
   const row = el('div', `automation-run-row ${entry.success ? 'ok' : 'fail'}`)
   row.append(
     el('span', 'automation-run-time', [relativeTime(entry.at)]),
-    el('span', 'automation-run-summary', [
-      entry.undone ? 'Undone' : entry.success ? entry.action : entry.error ?? 'Failed',
-    ]),
+    el('span', 'automation-run-summary', [summary]),
   )
   return row
 }
@@ -309,6 +338,14 @@ function fact(label: string, value: string) {
     el('span', 'review-report-value', [value]),
   )
   return row
+}
+
+function shortcutLabel(automation: Automation) {
+  if (automation.keybind && automation.keybindEnabled) {
+    return formatKeybind(automation.keybind)
+  }
+  if (automation.keybind) return `${formatKeybind(automation.keybind)} (off)`
+  return 'None'
 }
 
 function cell(text: string, extra = '') {
@@ -330,19 +367,6 @@ function filterTabs(
     bar.append(tab)
   }
   return bar
-}
-
-function pillBtn(
-  label: string,
-  tone: 'primary' | 'ghost',
-  onClick: () => void,
-) {
-  const btn = button(
-    `connector-action pill${tone === 'primary' ? ' primary' : ' ghost'}`,
-    label,
-  )
-  btn.addEventListener('click', onClick)
-  return btn
 }
 
 function textBtn(label: string, ghost: boolean, onClick: () => void) {

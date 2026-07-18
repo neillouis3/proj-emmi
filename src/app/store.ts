@@ -1,6 +1,10 @@
 import { createInitialState } from '@/data/mock'
+import { applyAppearance } from '@/lib/appearance'
+import { resolveSystemKeybinds, SYSTEM_KEYBIND_DEFS } from '@/lib/systemKeybinds'
 import type {
   AppState,
+  AppearancePrefs,
+  AccountProfile,
   Automation,
   AutomationStep,
   AutomationTrigger,
@@ -9,12 +13,17 @@ import type {
   LlmConfig,
   NotificationPrefs,
   GeneralPrefs,
+  KeybindPrefs,
+  AutomationPrefs,
   OtherPrefs,
+  PathVariable,
   PendingAction,
   RecentRun,
   Rule,
   RuleMode,
   ScreenId,
+  SystemKeybindId,
+  SystemKeybindState,
 } from '@/types/domain'
 
 const STORAGE_KEY = 'emmi.app-state.v2'
@@ -22,6 +31,34 @@ const channel =
   typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('emmi-state') : null
 
 type Listener = (state: AppState) => void
+
+function migrateAccount(
+  base: AccountProfile,
+  parsed?: Partial<AccountProfile> & { displayName?: string },
+): AccountProfile {
+  const merged = { ...base, ...parsed }
+  if (
+    parsed?.displayName &&
+    !parsed.firstName &&
+    !parsed.lastName &&
+    !merged.firstName
+  ) {
+    const parts = parsed.displayName.trim().split(/\s+/)
+    merged.firstName = parts[0] ?? base.firstName
+    merged.lastName = parts.slice(1).join(' ') || base.lastName
+  }
+  if (merged.avatarDataUrl === undefined) merged.avatarDataUrl = null
+  return {
+    firstName: merged.firstName ?? base.firstName,
+    lastName: merged.lastName ?? base.lastName,
+    email: merged.email ?? base.email,
+    handle: merged.handle ?? base.handle,
+    avatarDataUrl: merged.avatarDataUrl ?? null,
+    license: merged.license ?? base.license,
+    licenseLabel: merged.licenseLabel ?? base.licenseLabel,
+    memberSince: merged.memberSince ?? base.memberSince,
+  }
+}
 
 function loadState(): AppState {
   try {
@@ -38,14 +75,32 @@ function loadState(): AppState {
         popular: connector.popular ?? fallback?.popular ?? false,
       }
     })
+    const automations = (parsed.automations ?? base.automations).map((automation) => {
+      const fallback = base.automations.find((a) => a.id === automation.id)
+      return {
+        ...fallback,
+        ...automation,
+        keybind: automation.keybind ?? fallback?.keybind ?? null,
+        keybindEnabled: automation.keybindEnabled ?? fallback?.keybindEnabled ?? true,
+      }
+    })
     return {
       ...base,
       ...parsed,
+      // Session navigation is in-memory; cold load always starts on Dashboard.
+      route: 'overview',
       general: { ...base.general, ...parsed.general },
+      appearance: { ...base.appearance, ...parsed.appearance },
+      account: migrateAccount(base.account, parsed.account),
       notifications: { ...base.notifications, ...parsed.notifications },
+      automationsPrefs: { ...base.automationsPrefs, ...parsed.automationsPrefs },
       other: { ...base.other, ...parsed.other },
+      keybinds: { ...base.keybinds, ...parsed.keybinds },
+      systemKeybinds: resolveSystemKeybinds(parsed.systemKeybinds),
+      pathVariables: migratePathVariables(base.pathVariables, parsed.pathVariables),
       llm: { ...base.llm, ...parsed.llm },
       connectors,
+      automations,
     }
   } catch {
     return createInitialState()
@@ -53,19 +108,23 @@ function loadState(): AppState {
 }
 
 let state = loadState()
+applyAppearance(state.appearance)
 const listeners = new Set<Listener>()
 let applyingRemote = false
 
 function emit() {
   for (const listener of listeners) listener(state)
   syncTrayMenu()
+  syncKeybinds()
 }
 
 function persist() {
   if (applyingRemote) return
   // Perf: defer disk/IPC-ish work until the renderer is idle.
   const write = () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+    // Don't persist route — always reopen on Dashboard unless URL deep-links.
+    const { route: _route, ...rest } = state
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...rest, route: 'overview' }))
     channel?.postMessage({ type: 'sync' })
   }
   if (typeof requestIdleCallback === 'function') {
@@ -85,9 +144,31 @@ function uid(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 9)}`
 }
 
+function migratePathVariables(
+  base: PathVariable[],
+  parsed?: PathVariable[],
+): PathVariable[] {
+  if (!Array.isArray(parsed)) return base
+  return parsed
+    .filter(
+      (item): item is PathVariable =>
+        !!item &&
+        typeof item.id === 'string' &&
+        typeof item.name === 'string' &&
+        typeof item.path === 'string',
+    )
+    .map((item) => ({
+      id: item.id,
+      name: item.name,
+      path: item.path,
+    }))
+}
+
 channel?.addEventListener('message', () => {
   applyingRemote = true
-  state = loadState()
+  const currentRoute = state.route
+  state = { ...loadState(), route: currentRoute }
+  applyAppearance(state.appearance)
   applyingRemote = false
   emit()
 })
@@ -193,8 +274,34 @@ function syncTrayMenu() {
   window.emmi?.syncTrayMenu?.({ runs, moreCount })
 }
 
+function syncKeybinds() {
+  const system = SYSTEM_KEYBIND_DEFS.filter((def) => {
+    const entry = state.systemKeybinds[def.id]
+    return entry?.enabled !== false && entry?.accelerator
+  }).map((def) => ({
+    kind: 'system' as const,
+    id: def.id,
+    accelerator: state.systemKeybinds[def.id].accelerator as string,
+  }))
+
+  const automations = state.automations
+    .filter((a) => a.active && a.keybindEnabled && a.keybind)
+    .map((a) => ({
+      kind: 'automation' as const,
+      id: a.id,
+      accelerator: a.keybind as string,
+    }))
+
+  window.emmi?.syncKeybinds?.({
+    enabled: state.keybinds.enabled,
+    appFocusedOnly: state.keybinds.appFocusedOnly,
+    bindings: [...system, ...automations],
+  })
+}
+
 export function pushTraySync() {
   syncTrayMenu()
+  syncKeybinds()
 }
 
 export function counts(snapshot: AppState = state) {
@@ -243,7 +350,20 @@ export function setLlm(llm: Partial<LlmConfig>) {
 }
 
 export function setGeneralPrefs(general: Partial<GeneralPrefs>) {
-  patch({ general: { ...state.general, ...general } })
+  const next = { ...state.general, ...general }
+  patch({ general: next })
+  window.emmi?.setShowInDock?.(next.showInDock)
+  window.emmi?.setMenuBarTitle?.(next.showMenuBarTitle)
+}
+
+export function setAppearancePrefs(appearance: Partial<AppearancePrefs>) {
+  const next = { ...state.appearance, ...appearance }
+  applyAppearance(next)
+  patch({ appearance: next })
+}
+
+export function setAccountProfile(account: Partial<AccountProfile>) {
+  patch({ account: { ...state.account, ...account } })
 }
 
 export function setNotificationPrefs(notifications: Partial<NotificationPrefs>) {
@@ -252,6 +372,122 @@ export function setNotificationPrefs(notifications: Partial<NotificationPrefs>) 
 
 export function setOtherPrefs(other: Partial<OtherPrefs>) {
   patch({ other: { ...state.other, ...other } })
+}
+
+export function setAutomationPrefs(automationsPrefs: Partial<AutomationPrefs>) {
+  patch({ automationsPrefs: { ...state.automationsPrefs, ...automationsPrefs } })
+}
+
+export function setKeybindPrefs(keybinds: Partial<KeybindPrefs>) {
+  patch({ keybinds: { ...state.keybinds, ...keybinds } })
+}
+
+export function setSystemKeybind(
+  id: SystemKeybindId,
+  patchFields: Partial<SystemKeybindState>,
+) {
+  patch({
+    systemKeybinds: {
+      ...state.systemKeybinds,
+      [id]: {
+        ...state.systemKeybinds[id],
+        ...patchFields,
+      },
+    },
+  })
+}
+
+export function createPathVariable(input?: Partial<Pick<PathVariable, 'name' | 'path'>>) {
+  const variable: PathVariable = {
+    id: uid('pv'),
+    name: input?.name?.trim() ?? '',
+    path: input?.path?.trim() ?? '',
+  }
+  patch({ pathVariables: [...state.pathVariables, variable] })
+  return variable
+}
+
+export function updatePathVariable(
+  id: string,
+  partial: Partial<Pick<PathVariable, 'name' | 'path'>>,
+) {
+  patch({
+    pathVariables: state.pathVariables.map((item) =>
+      item.id === id
+        ? {
+            ...item,
+            ...partial,
+            name: partial.name !== undefined ? partial.name : item.name,
+            path: partial.path !== undefined ? partial.path : item.path,
+          }
+        : item,
+    ),
+  })
+}
+
+export function deletePathVariable(id: string) {
+  patch({
+    pathVariables: state.pathVariables.filter((item) => item.id !== id),
+  })
+}
+
+export function resetSystemKeybinds() {
+  patch({ systemKeybinds: resolveSystemKeybinds() })
+}
+
+export function runSystemKeybind(id: SystemKeybindId) {
+  switch (id) {
+    case 'open-dashboard':
+      navigate('overview')
+      break
+    case 'open-settings':
+      navigate('settings')
+      break
+    case 'open-review':
+      navigate('review')
+      break
+    case 'open-automations':
+      navigate('automations')
+      break
+    case 'open-logs':
+      navigate('log')
+      break
+    case 'open-keybinds':
+      navigate('keybinds')
+      break
+    case 'new-automation':
+      navigate('automation-new')
+      break
+    case 'toggle-sidebar':
+      toggleSidebar()
+      break
+  }
+}
+
+export function setAutomationKeybind(
+  id: string,
+  keybind: string | null,
+  keybindEnabled?: boolean,
+) {
+  patch({
+    automations: state.automations.map((a) =>
+      a.id === id
+        ? {
+            ...a,
+            keybind,
+            keybindEnabled: keybindEnabled ?? a.keybindEnabled,
+          }
+        : a,
+    ),
+  })
+}
+
+export function updateAutomation(id: string, patchFields: Partial<Automation>) {
+  patch({
+    automations: state.automations.map((a) =>
+      a.id === id ? { ...a, ...patchFields } : a,
+    ),
+  })
 }
 
 export function showBlocking(blocking: BlockingPrompt) {
@@ -550,22 +786,30 @@ export function toggleAutomation(id: string) {
 
 export function createAutomation(input: {
   name: string
+  description?: string
   trigger: AutomationTrigger
   defaultMode: 'review' | 'ask'
   steps: AutomationStep[]
+  keybind?: string | null
+  keybindEnabled?: boolean
+  active?: boolean
 }) {
   const automation: Automation = {
     id: uid('auto'),
     name: input.name,
-    description: 'Custom automation',
-    active: true,
+    description: input.description?.trim() || 'Custom automation',
+    active: input.active ?? true,
     trigger: input.trigger,
     triggerSummary:
       input.trigger === 'manual'
         ? 'manual (menu bar)'
         : input.trigger === 'git-hook'
           ? 'Git hook'
-          : 'CLI command',
+          : input.trigger === 'keybind'
+            ? 'Keybind'
+            : 'CLI command',
+    keybind: input.keybind ?? null,
+    keybindEnabled: input.keybindEnabled ?? true,
     defaultMode: input.defaultMode,
     steps: input.steps,
     lastRunAt: undefined,
@@ -635,7 +879,7 @@ export function seedTemplateRule() {
   createRule({
     trigger: 'File created in ~/Desktop',
     match: 'ext == pdf',
-    action: 'Move → ~/Documents/Inbox',
+    action: 'Move to ~/Documents/Inbox',
     mode: 'review',
     connectorId: 'fs',
     origin: 'user',

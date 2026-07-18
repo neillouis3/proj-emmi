@@ -1,51 +1,34 @@
-import {
-  Folder01Icon,
-  GithubIcon,
-  HardDriveIcon,
-  SpotifyIcon,
-} from '@hugeicons/core-free-icons'
+import { el } from '@/lib/dom'
+import { icons } from '@/lib/icons'
 
-type IconNode = [string, Record<string, string | number>]
-type HugeIcon = IconNode[]
-
-function toAttr(key: string, value: string | number) {
-  const name =
-    key === 'strokeWidth'
-      ? 'stroke-width'
-      : key === 'strokeLinecap'
-        ? 'stroke-linecap'
-        : key === 'strokeLinejoin'
-          ? 'stroke-linejoin'
-          : key === 'fillRule'
-            ? 'fill-rule'
-            : key === 'clipRule'
-              ? 'clip-rule'
-              : key
-  return `${name}="${value}"`
+type ConnectorVisual = {
+  icon: string
+  tone: string
 }
 
-function renderHugeIcon(icon: HugeIcon, size = 16) {
-  const body = icon
-    .map(([tag, attrs]) => {
-      const attr = Object.entries(attrs)
-        .filter(([key]) => key !== 'key')
-        .map(([key, value]) => toAttr(key, value))
-        .join(' ')
-      return `<${tag} ${attr} />`
-    })
-    .join('')
-
-  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${body}</svg>`
+const visuals: Record<string, ConnectorVisual> = {
+  fs: { icon: icons.folder, tone: 'blue' },
+  git: { icon: icons.github, tone: 'gray' },
+  spotify: { icon: icons.music, tone: 'green' },
 }
 
-const logos: Record<string, string> = {
-  fs: renderHugeIcon(HardDriveIcon as HugeIcon, 16),
-  git: renderHugeIcon(GithubIcon as HugeIcon, 16),
-  spotify: renderHugeIcon(SpotifyIcon as HugeIcon, 16),
-}
+const fallback: ConnectorVisual = { icon: icons.plug, tone: 'purple' }
 
-const fallback = renderHugeIcon(Folder01Icon as HugeIcon, 16)
+export function connectorVisual(id: string): ConnectorVisual {
+  return visuals[id] ?? fallback
+}
 
 export function connectorLogo(id: string) {
-  return logos[id] ?? fallback
+  return connectorVisual(id).icon
+}
+
+/** Sidebar-matching icon tile for a connector. */
+export function connectorIconTile(id: string, compact = false) {
+  const { icon, tone } = connectorVisual(id)
+  const tile = el(
+    'span',
+    `app-icon-tile${compact ? ' compact' : ''} tone-${tone}`,
+  )
+  tile.innerHTML = icon
+  return tile
 }

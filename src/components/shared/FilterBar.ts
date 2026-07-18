@@ -65,7 +65,7 @@ function SearchField(control: {
   return wrap
 }
 
-function SelectField(control: {
+export function SelectField(control: {
   label: string
   value: string
   options: { value: string; label: string }[]
@@ -84,7 +84,7 @@ function SelectField(control: {
 
   const valueEl = el('span', 'filter-select-value', [current?.label ?? ''])
   const chevron = el('span', 'filter-select-chevron')
-  chevron.innerHTML = icons.chevronDown
+  chevron.innerHTML = icons.chevronUpDown
   chevron.setAttribute('aria-hidden', 'true')
   trigger.append(valueEl, chevron)
 
@@ -119,10 +119,7 @@ function SelectField(control: {
         item.type = 'button'
         item.setAttribute('role', 'option')
         item.setAttribute('aria-selected', String(active))
-        item.innerHTML = `
-          <span class="check">${active ? icons.check : ''}</span>
-          <span>${option.label}</span>
-        `
+        item.innerHTML = `<span>${option.label}</span>`
         item.addEventListener('click', (event) => {
           event.stopPropagation()
           close()

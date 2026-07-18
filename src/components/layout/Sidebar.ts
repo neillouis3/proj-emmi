@@ -2,6 +2,7 @@ import { el, button } from '@/lib/dom'
 import { icons } from '@/lib/icons'
 import { counts, getState, navigate, subscribe } from '@/app/store'
 import type { ScreenId } from '@/types/domain'
+import { accountDisplayName, accountInitials } from '@/lib/account'
 import { ThemeMenuButton } from '@/components/ThemeMenu'
 
 const navItems: {
@@ -13,9 +14,9 @@ const navItems: {
 }[] = [
   { id: 'overview', label: 'Dashboard', icon: icons.home, tone: 'blue' },
   { id: 'review', label: 'Review Queue', icon: icons.review, tone: 'green', badge: true },
-  { id: 'automations', label: 'Automations', icon: icons.spark, tone: 'indigo' },
+  { id: 'automations', label: 'Automations', icon: icons.bolt, tone: 'orange' },
   { id: 'connectors', label: 'Connectors', icon: icons.plug, tone: 'purple' },
-  { id: 'log', label: 'Log', icon: icons.history, tone: 'pink' },
+  { id: 'log', label: 'Logs', icon: icons.history, tone: 'pink' },
   { id: 'rules', label: 'Rules', icon: icons.rules, tone: 'red' },
 ]
 
@@ -47,19 +48,47 @@ export function Sidebar() {
   buttons.set('settings', settingsBtn)
 
   const user = el('div', 'user-row')
+  const profile = button('user-profile')
+  profile.type = 'button'
+  profile.setAttribute('aria-label', 'Open account')
+
+  const avatar = el('div', 'avatar')
   const meta = el('div', 'user-meta')
-  meta.append(
-    el('div', 'user-name', ['Local Automation']),
-    el('div', 'user-plan', ['Menu bar resident']),
-  )
-  user.append(el('div', 'avatar'), meta, ThemeMenuButton())
+  const nameEl = el('div', 'user-name')
+  const planEl = el('div', 'user-plan')
+  meta.append(nameEl, planEl)
+  profile.append(avatar, meta)
+  profile.addEventListener('click', () => navigate('account'))
+
+  user.append(profile, ThemeMenuButton())
   footer.append(settingsBtn, user)
 
   const sync = () => {
     const state = getState()
     const pending = counts(state).pending
+    const activeNav =
+      state.route === 'automation-new'
+        ? 'automations'
+        : state.route === 'rule-new'
+          ? 'rules'
+          : state.route === 'keybinds' ||
+              state.route === 'appearance' ||
+              state.route === 'path-variables'
+            ? 'settings'
+            : state.route
     for (const [id, btn] of buttons) {
-      btn.classList.toggle('active', state.route === id)
+      btn.classList.toggle('active', activeNav === id)
+    }
+    nameEl.textContent = accountDisplayName(state.account)
+    planEl.textContent = state.account.licenseLabel
+    if (state.account.avatarDataUrl) {
+      avatar.style.backgroundImage = `url(${state.account.avatarDataUrl})`
+      avatar.style.backgroundSize = 'cover'
+      avatar.style.backgroundPosition = 'center'
+      avatar.textContent = ''
+    } else {
+      avatar.style.backgroundImage = ''
+      avatar.textContent = accountInitials(state.account)
     }
     const badge = nav.querySelector<HTMLElement>('[data-badge="review"]')
     if (badge) {
@@ -76,7 +105,7 @@ export function Sidebar() {
 
 function navRow(label: string, iconSvg: string, tone: string) {
   const btn = button(`nav-btn tone-${tone}`)
-  const tile = el('span', 'nav-tile')
+  const tile = el('span', `app-icon-tile nav-tile tone-${tone}`)
   tile.innerHTML = iconSvg
   btn.append(tile, el('span', 'nav-label', [label]))
   return btn

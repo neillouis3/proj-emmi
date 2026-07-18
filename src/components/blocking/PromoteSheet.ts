@@ -1,4 +1,5 @@
 import { el, button } from '@/lib/dom'
+import { labelPathText } from '@/lib/pathVariables'
 import { dismissPromote, getState, promoteRule, subscribe } from '@/app/store'
 
 export function PromoteSheetHost() {
@@ -6,7 +7,7 @@ export function PromoteSheetHost() {
   host.hidden = true
 
   const render = () => {
-    const { promote, rules, blocking } = getState()
+    const { promote, rules, blocking, pathVariables } = getState()
     if (!promote || blocking) {
       host.hidden = true
       host.replaceChildren()
@@ -31,7 +32,9 @@ export function PromoteSheetHost() {
           `This rule has been approved ${promote.approvalCount} times. Emmi can run it automatically from now on.`,
         ],
       ),
-      el('p', 'promote-rule', [`${rule.trigger} → ${rule.action}`]),
+      el('p', 'promote-rule', [
+        `${labelPathText(rule.trigger, pathVariables)}. ${labelPathText(rule.action, pathVariables)}`,
+      ]),
     )
 
     const actions = el('div', 'promote-actions')
