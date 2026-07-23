@@ -3,7 +3,6 @@ import { Sidebar } from '@/components/layout/Sidebar'
 import { WorkspaceHeader } from '@/components/layout/WorkspaceHeader'
 import { mountRouter } from '@/app/router'
 import { BlockingModalHost } from '@/components/blocking/BlockingModal'
-import { PromoteSheetHost } from '@/components/blocking/PromoteSheet'
 
 export function Shell() {
   const shell = el('div', 'app-shell')
@@ -12,7 +11,7 @@ export function Shell() {
   top.append(WorkspaceHeader())
   const outlet = el('div', 'screen-outlet no-drag')
 
-  workspace.append(top, outlet, PromoteSheetHost())
+  workspace.append(top, outlet)
   shell.append(Sidebar(), workspace, BlockingModalHost())
   mountRouter(outlet)
   return shell

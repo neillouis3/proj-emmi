@@ -6,11 +6,15 @@
   "description": "Emmi — local automation",
   "main": "dist-electron/main.js",
   "scripts": {
-    "dev": "ELECTRON_RUN_AS_NODE= vite",
+    "dev": "npm run daemon:build && ELECTRON_RUN_AS_NODE= vite",
     "build": "vite build",
     "preview": "vite preview",
-    "postinstall": "node scripts/name-electron-app.mjs",
-    "name-app": "node scripts/name-electron-app.mjs"
+    "postinstall": "node scripts/name-electron-app.mjs && npm install --prefix backend",
+    "name-app": "node scripts/name-electron-app.mjs",
+    "daemon": "npm run start --prefix backend",
+    "daemon:dev": "npm run dev --prefix backend",
+    "daemon:build": "npm run build --prefix backend",
+    "emmi": "node bin/emmi.mjs"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
@@ -29,5 +33,8 @@
   "dependencies": {
     "@hugeicons/core-free-icons": "^4.2.2",
     "heroicons": "^2.2.0"
+  },
+  "bin": {
+    "emmi": "./bin/emmi"
   }
 }

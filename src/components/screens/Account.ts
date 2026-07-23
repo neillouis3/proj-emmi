@@ -1,12 +1,13 @@
 import { el, button } from '@/lib/dom'
 import { ListRow, SectionBlock } from '@/components/shared/SectionBlock'
-import { SelectField } from '@/components/shared/FilterBar'
+import { SelectField } from '@/components/shared/controls'
 import { icons } from '@/lib/icons'
 import { accountDisplayName, accountInitials } from '@/lib/account'
 import {
   getState,
   navigate,
   setAccountProfile,
+  showBlocking,
 } from '@/app/store'
 import type { AccountProfile } from '@/types/domain'
 
@@ -18,15 +19,19 @@ export function Account() {
     const state = getState()
     const account = state.account
     const name = accountDisplayName(account)
+    const email = account.email.trim() || 'emmi.dev'
     page.replaceChildren()
     body.replaceChildren()
 
     const hero = el('section', 'account-hero')
     hero.append(avatarNode(account, 'account-avatar'), (() => {
       const copy = el('div', 'account-hero-copy')
+      const meta = account.handle.trim()
+        ? `@${account.handle} · ${email}`
+        : email
       copy.append(
         el('div', 'account-hero-name', [name]),
-        el('div', 'account-hero-meta', [`@${account.handle} · ${account.email}`]),
+        el('div', 'account-hero-meta', [meta]),
       )
       return copy
     })(), el('span', `account-license-badge license-${account.license}`, [
@@ -37,10 +42,10 @@ export function Account() {
     body.append(
       SectionBlock({
         icon: icons.user,
-        tone: 'pink',
+        tone: 'indigo',
         title: 'Profile',
         rows: [
-          staticValueRow('Email', account.email),
+          staticValueRow('Email', email),
           profileImageRow(account, render),
           fieldRow('First Name', account.firstName, (v) => {
             setAccountProfile({ firstName: v })
@@ -77,7 +82,7 @@ export function Account() {
     body.append(
       SectionBlock({
         icon: icons.checkBadge,
-        tone: 'green',
+        tone: 'yellow',
         title: 'License',
         rows: [
           customRow('Plan', licenseControl),
@@ -86,7 +91,7 @@ export function Account() {
             account.license === 'personal' ? 'Free forever' : 'Active',
           ),
           valueRow('Seats', account.license === 'team' ? '5 seats' : '1 seat'),
-          linkRow('Manage billing', 'Opens billing portal', () => {}),
+          linkRow('Manage billing', undefined, { disabled: true }),
         ],
       }),
     )
@@ -97,11 +102,18 @@ export function Account() {
         tone: 'gray',
         title: 'More',
         rows: [
-          linkRow('Keyboard shortcuts', 'Manage keybinds', () =>
-            navigate('keybinds'),
-          ),
-          linkRow('Settings', 'App preferences', () => navigate('settings')),
-          linkRow('Sign out', 'End this local session', () => {}),
+          linkRow('Keybinds', () => navigate('keybinds')),
+          linkRow('Settings', () => navigate('settings')),
+          linkRow('Sign out', () => {
+            showBlocking({
+              id: `sign-out-${Date.now()}`,
+              kind: 'confirm',
+              title: 'Sign out?',
+              body: 'Your profile and settings stay on this Mac. Automations are unchanged.',
+              primaryLabel: 'Sign out',
+              secondaryLabel: 'Cancel',
+            })
+          }),
         ],
       }),
     )
@@ -205,17 +217,26 @@ function customRow(label: string, control: HTMLElement) {
   return row
 }
 
-function linkRow(label: string, meta: string, onClick: () => void) {
-  const row = button('settings-row settings-row-button')
-  row.type = 'button'
-  const left = el('div', 'settings-row-copy')
-  left.append(
-    el('span', 'settings-row-label', [label]),
-    el('span', 'settings-row-meta', [meta]),
+function linkRow(
+  label: string,
+  onClick?: () => void,
+  opts?: { disabled?: boolean },
+) {
+  const row = button(
+    `settings-row settings-row-button${opts?.disabled ? ' is-disabled' : ''}`,
   )
+  row.type = 'button'
+  if (opts?.disabled) {
+    row.disabled = true
+    row.setAttribute('aria-disabled', 'true')
+  }
+  const left = el('div', 'settings-row-copy')
+  left.append(el('span', 'settings-row-label', [label]))
   const chevron = el('span', 'settings-row-chevron')
   chevron.innerHTML = icons.chevronRight
   row.append(left, chevron)
-  row.addEventListener('click', onClick)
+  if (onClick && !opts?.disabled) {
+    row.addEventListener('click', onClick)
+  }
   return row
 }

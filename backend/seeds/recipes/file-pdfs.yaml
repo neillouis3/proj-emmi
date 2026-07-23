@@ -1,0 +1,33 @@
+id: file-pdfs
+name: File Downloads PDFs
+description: Moves new PDFs from Downloads into Documents.
+trigger: watch
+active: false
+defaultMode: review
+keybind: null
+keybindEnabled: true
+watch:
+  paths:
+    - "~/Downloads"
+  debounceMs: 1500
+script: |
+  let files = list("~/Downloads/*")
+  let pdfs = detect("pdf", files)
+  move(pdfs, "~/Documents/PDFs")
+  log("Filed PDFs from Downloads")
+steps:
+  - tool: list
+    with:
+      dir: "~/Downloads/*"
+  - tool: detect
+    with:
+      pattern: pdf
+      list: "$files"
+  - tool: move
+    with:
+      input: "$pdfs"
+      output: "~/Documents/PDFs"
+  - tool: log
+    with:
+      message: "Filed PDFs from Downloads"
+      category: fs

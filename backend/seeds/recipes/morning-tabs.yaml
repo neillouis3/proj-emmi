@@ -1,0 +1,33 @@
+id: morning-tabs
+name: Open morning tabs
+description: Opens calendar and Gmail on weekday mornings.
+trigger: schedule
+active: false
+defaultMode: review
+keybind: null
+keybindEnabled: true
+schedule:
+  cron: "0 9 * * 1-5"
+script: |
+  safari.browse("https://calendar.google.com")
+  chrome.browse("https://mail.google.com")
+  chrome.wait("https://mail.google.com", 20000)
+  let page = chrome.pageRead()
+  log(page)
+steps:
+  - tool: safari.browse
+    with:
+      url: "https://calendar.google.com"
+  - tool: chrome.browse
+    with:
+      url: "https://mail.google.com"
+  - tool: chrome.wait
+    with:
+      urlOrSelector: "https://mail.google.com"
+      timeoutMs: "20000"
+  - tool: chrome.pageRead
+    with: {}
+  - tool: log
+    with:
+      message: "Morning tabs opened"
+      category: chrome

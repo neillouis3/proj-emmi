@@ -1,0 +1,17 @@
+id: hello
+name: Hello
+description: Example connector that greets and shouts. A template for building your own.
+kind: Local
+scope: Text in, text out
+naming: dotted
+permission:
+  grant: true
+rules:
+  - id: greet
+    file: greet.mjs
+    category: core
+    params: [name]
+  - id: shout
+    file: shout.mjs
+    category: core
+    params: [message]

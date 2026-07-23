@@ -3,44 +3,54 @@ import { icons } from '@/lib/icons'
 import { counts, getState, navigate, subscribe } from '@/app/store'
 import type { ScreenId } from '@/types/domain'
 import { accountDisplayName, accountInitials } from '@/lib/account'
-import { ThemeMenuButton } from '@/components/ThemeMenu'
+import { ThemeIconButton } from '@/components/shared/controls'
 
-const navItems: {
+type NavItem = {
   id: ScreenId
   label: string
   icon: string
   tone: string
   badge?: boolean
-}[] = [
+}
+
+const primaryNav: NavItem[] = [
   { id: 'overview', label: 'Dashboard', icon: icons.home, tone: 'blue' },
   { id: 'review', label: 'Review Queue', icon: icons.review, tone: 'green', badge: true },
   { id: 'automations', label: 'Automations', icon: icons.bolt, tone: 'orange' },
-  { id: 'connectors', label: 'Connectors', icon: icons.plug, tone: 'purple' },
   { id: 'log', label: 'Logs', icon: icons.history, tone: 'pink' },
+]
+
+const libraryNav: NavItem[] = [
+  { id: 'packs', label: 'Packs', icon: icons.layout, tone: 'blue' },
   { id: 'rules', label: 'Rules', icon: icons.rules, tone: 'red' },
+  { id: 'connectors', label: 'Connectors', icon: icons.plug, tone: 'purple' },
 ]
 
 export function Sidebar() {
   const aside = el('aside', 'sidebar')
   const top = el('div', 'sidebar-top drag-region')
-  const nav = el('nav', 'sidebar-nav no-drag')
+  const section = el('div', 'sidebar-section no-drag')
   const buttons = new Map<ScreenId, HTMLButtonElement>()
 
-  for (const item of navItems) {
-    const btn = navRow(item.label, item.icon, item.tone)
-    btn.dataset.route = item.id
-    if (item.badge) {
-      const badge = el('span', 'nav-badge')
-      badge.dataset.badge = 'review'
-      btn.append(badge)
+  const appendGroup = (items: NavItem[], spaced = false) => {
+    const nav = el('nav', spaced ? 'sidebar-nav is-spaced' : 'sidebar-nav')
+    for (const item of items) {
+      const btn = navRow(item.label, item.icon, item.tone)
+      btn.dataset.route = item.id
+      if (item.badge) {
+        const badge = el('span', 'nav-badge')
+        badge.dataset.badge = 'review'
+        btn.append(badge)
+      }
+      btn.addEventListener('click', () => navigate(item.id))
+      buttons.set(item.id, btn)
+      nav.append(btn)
     }
-    btn.addEventListener('click', () => navigate(item.id))
-    buttons.set(item.id, btn)
-    nav.append(btn)
+    section.append(nav)
   }
 
-  const section = el('div', 'sidebar-section no-drag')
-  section.append(nav)
+  appendGroup(primaryNav)
+  appendGroup(libraryNav, true)
 
   const footer = el('div', 'sidebar-footer no-drag')
   const settingsBtn = navRow('Settings', icons.gear, 'gray')
@@ -60,7 +70,7 @@ export function Sidebar() {
   profile.append(avatar, meta)
   profile.addEventListener('click', () => navigate('account'))
 
-  user.append(profile, ThemeMenuButton())
+  user.append(profile, ThemeIconButton())
   footer.append(settingsBtn, user)
 
   const sync = () => {
@@ -71,11 +81,13 @@ export function Sidebar() {
         ? 'automations'
         : state.route === 'rule-new'
           ? 'rules'
-          : state.route === 'keybinds' ||
-              state.route === 'appearance' ||
-              state.route === 'path-variables'
-            ? 'settings'
-            : state.route
+          : state.route === 'detailed-log'
+            ? 'log'
+            : state.route === 'keybinds' ||
+                state.route === 'appearance' ||
+                state.route === 'path-variables'
+              ? 'settings'
+              : state.route
     for (const [id, btn] of buttons) {
       btn.classList.toggle('active', activeNav === id)
     }
@@ -90,7 +102,7 @@ export function Sidebar() {
       avatar.style.backgroundImage = ''
       avatar.textContent = accountInitials(state.account)
     }
-    const badge = nav.querySelector<HTMLElement>('[data-badge="review"]')
+    const badge = aside.querySelector<HTMLElement>('[data-badge="review"]')
     if (badge) {
       badge.textContent = pending > 0 ? String(pending) : ''
       badge.hidden = pending === 0

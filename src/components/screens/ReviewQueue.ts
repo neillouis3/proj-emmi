@@ -1,12 +1,23 @@
-import { el, button } from '@/lib/dom'
-import { PageToolbar } from '@/components/shared/PageToolbar'
-import { EmptyState } from '@/components/shared/EmptyState'
+import { el } from '@/lib/dom'
+import { Btn, IconBtn, TextField } from '@/components/shared/controls'
+import {
+  dataTable,
+  detailDescription,
+  detailTitleRow,
+  EmptyState,
+  metaGrid,
+  metaGridCell,
+  PageToolbar,
+  sectionLabel,
+  splitView,
+  tableCell,
+  tableSelectRow,
+} from '@/components/shared/layout'
 import { relativeTime } from '@/lib/format'
 import { icons } from '@/lib/icons'
 import { connectorIconTile } from '@/lib/connectorLogos'
 import { labelPathText } from '@/lib/pathVariables'
 import {
-  alwaysDoThis,
   approveAll,
   approvePending,
   getState,
@@ -15,6 +26,7 @@ import {
   rejectPending,
   updatePendingAction,
 } from '@/app/store'
+import { bindScreen } from '@/lib/bindScreen'
 import type { PendingAction } from '@/types/domain'
 
 export function ReviewQueue() {
@@ -36,13 +48,21 @@ export function ReviewQueue() {
     const bulk =
       items.length > 1
         ? [
-            textBtn('Approve all', true, () => {
-              approveAll(items.map((i) => i.id))
-              render()
+            Btn({
+              label: 'Approve all',
+              variant: 'ghost',
+              onClick: () => {
+                approveAll(items.map((i) => i.id))
+                render()
+              },
             }),
-            textBtn('Reject all', true, () => {
-              rejectAll(items.map((i) => i.id))
-              render()
+            Btn({
+              label: 'Reject all',
+              variant: 'ghost',
+              onClick: () => {
+                rejectAll(items.map((i) => i.id))
+                render()
+              },
             }),
           ]
         : undefined
@@ -58,7 +78,7 @@ export function ReviewQueue() {
       body.append(
         EmptyState({
           title: 'Nothing pending',
-          body: 'Automations will show up here when they need a decision.',
+          body: 'Items show up here when an automation needs your decision.',
           actionLabel: 'Open Automations',
           onAction: () => navigate('automations'),
         }),
@@ -67,41 +87,36 @@ export function ReviewQueue() {
       return
     }
 
-    const split = el('div', 'review-split')
-
-    const main = el('div', 'review-main')
-    const table = el('div', 'log-table review-table')
-    table.append(headRow())
-    for (const item of items) {
-      table.append(
-        reviewTableRow(item, state, item.id === selectedId, () => {
-          selectedId = item.id
-          render()
-        }, render),
-      )
-    }
-    main.append(table)
-
-    const side = el('aside', 'review-side')
-    if (selected) {
-      side.append(detailPanel(selected, state, render))
-    }
-
-    split.append(main, side)
-    body.append(split)
+    body.append(
+      splitView({
+        splitClass: 'review-split',
+        mainClass: 'review-main',
+        sideClass: 'review-side',
+        main: [
+          dataTable({
+            className: 'review-table',
+            headClass: 'review-table-row',
+            columns: ['Time', 'Item', 'Action', 'Automation', ''],
+            rows: items.map((item) =>
+              reviewTableRow(item, state, item.id === selectedId, () => {
+                selectedId = item.id
+                render()
+              }, render),
+            ),
+          }),
+        ],
+        side: selected ? buildReviewDetail(selected, state, render) : null,
+      }),
+    )
     page.append(body)
   }
 
-  render()
-  return page
+  return bindScreen(page, render)
 }
 
-function headRow() {
-  const row = el('div', 'log-table-row head review-table-row')
-  for (const label of ['Time', 'Item', 'Action', 'Automation', '']) {
-    row.append(cell(label))
-  }
-  return row
+function approveLabel(item: PendingAction) {
+  if (item.grantKind) return 'Allow & continue'
+  return 'Approve'
 }
 
 function reviewTableRow(
@@ -112,156 +127,181 @@ function reviewTableRow(
   refresh: () => void,
 ) {
   const automation = state.automations.find((a) => a.id === item.automationId)
-  const row = button(
-    `log-table-row review-table-row${selected ? ' is-selected' : ''}`,
-  )
-  row.type = 'button'
-
   const itemCell = el('div', 'log-cell review-table-item-cell')
   const logo = connectorIconTile(item.connectorId, true)
   itemCell.append(logo, el('span', 'review-table-item-name', [item.title]))
 
   const actions = el('div', 'log-cell log-cell-action')
   actions.append(
-    iconBtn(icons.check, 'Approve', 'approve', (e) => {
-      e.stopPropagation()
-      approvePending(item.id)
-      refresh()
+    IconBtn({
+      svg: icons.check,
+      label: approveLabel(item),
+      tone: 'approve',
+      onClick: (e) => {
+        e.stopPropagation()
+        approvePending(item.id)
+        refresh()
+      },
     }),
-    iconBtn(icons.x, 'Reject', 'reject', (e) => {
-      e.stopPropagation()
-      rejectPending(item.id)
-      refresh()
+    IconBtn({
+      svg: icons.x,
+      label: 'Reject',
+      tone: 'reject',
+      onClick: (e) => {
+        e.stopPropagation()
+        rejectPending(item.id)
+        refresh()
+      },
     }),
   )
 
-  row.append(
-    cell(relativeTime(item.createdAt), 'log-cell-time'),
-    itemCell,
-    cell(labelPathText(item.action, state.pathVariables)),
-    cell(automation?.name ?? 'Manual'),
-    actions,
-  )
-  row.addEventListener('click', onSelect)
-  return row
+  return tableSelectRow({
+    rowClass: 'review-table-row',
+    selected,
+    cells: [
+      tableCell(relativeTime(item.createdAt), 'log-cell-time'),
+      itemCell,
+      tableCell(labelPathText(item.action, state.pathVariables)),
+      tableCell(automation?.name ?? 'Manual'),
+      actions,
+    ],
+    onSelect,
+  })
 }
 
-function detailPanel(
+function buildReviewDetail(
   item: PendingAction,
   state: ReturnType<typeof getState>,
   refresh: () => void,
 ) {
   const automation = state.automations.find((a) => a.id === item.automationId)
   const connector = state.connectors.find((c) => c.id === item.connectorId)
-  const rule = state.rules.find((r) => r.id === item.sourceRuleId)
-
-  const panel = el('section', 'review-detail')
-  const head = el('div', 'review-detail-head')
-  const logo = connectorIconTile(item.connectorId)
-  const copy = el('div', 'review-detail-copy')
-  copy.append(
-    el('div', 'review-detail-title', [item.title]),
-    el('div', 'review-detail-meta', [
-      `${relativeTime(item.createdAt)} · ${connector?.name ?? item.connectorId}`,
-    ]),
-  )
-  head.append(logo, copy)
-  panel.append(head)
-
-  const actions = el('div', 'review-detail-actions')
-  actions.append(
-    textBtn('Approve', true, () => {
-      approvePending(item.id)
-      refresh()
-    }),
-    textBtn('Reject', true, () => {
-      rejectPending(item.id)
-      refresh()
-    }),
-  )
-  panel.append(actions)
-
   const vars = state.pathVariables
-  const facts = el('div', 'review-detail-facts')
-  facts.append(
-    fact('Trigger', labelPathText(item.trigger, vars)),
-    fact('Proposed', labelPathText(item.action, vars)),
-    fact('Automation', automation?.name ?? 'Manual'),
+
+  const trigger = shortTrigger(item.trigger, automation?.name ?? item.title)
+
+  const root = el('div', 'review-detail')
+
+  const actions = el('div', 'detail-actions review-detail-actions')
+  actions.append(
+    Btn({
+      label: 'Reject',
+      variant: 'ghost',
+      onClick: () => {
+        rejectPending(item.id)
+        refresh()
+      },
+    }),
+    Btn({
+      label: approveLabel(item),
+      variant: 'primary',
+      onClick: () => {
+        approvePending(item.id)
+        refresh()
+      },
+    }),
   )
-  if (item.reasoning) facts.append(fact('Why', item.reasoning))
-  if (rule) {
-    facts.append(
-      fact('Rule', `${rule.mode} · ${labelPathText(rule.match, vars)}`),
+
+  const head = el('div', 'detail-head review-detail-head')
+  const copy = el('div', 'detail-copy')
+  copy.append(detailTitleRow(item.title, actions))
+  head.append(connectorIconTile(item.connectorId, true), copy)
+  root.append(head)
+
+  root.append(detailDescription(labelPathText(item.action, vars)))
+
+  if (item.trustNote) {
+    root.append(
+      el(
+        'p',
+        `review-trust-note${item.undoable ? ' is-undoable' : ' is-not-undoable'}`,
+        [item.trustNote],
+      ),
     )
   }
-  panel.append(facts)
 
-  const edit = el('input', 'review-edit-input') as HTMLInputElement
-  edit.type = 'text'
-  edit.value = item.editableAction
-  edit.addEventListener('change', () =>
-    updatePendingAction(item.id, edit.value),
+  const stats = [
+    metaGridCell('Queued', relativeTime(item.createdAt)),
+    metaGridCell('Connector', connector?.name ?? item.connectorId),
+  ]
+  if (trigger) stats.push(metaGridCell('Trigger', trigger))
+  stats.push(
+    metaGridCell('Undo', item.undoable ? 'File moves can be undone' : 'Not undoable'),
   )
-  const editBlock = el('div', 'review-detail-edit')
-  editBlock.append(el('span', 'review-report-label', ['Edit action']), edit)
-  panel.append(editBlock)
+  root.append(metaGrid(stats))
 
-  const extras = el('div', 'review-report-actions')
-  const always = button('btn btn-ghost btn-compact', 'Always do this')
-  always.type = 'button'
-  always.addEventListener('click', () => {
-    const ok = confirm(
-      'Future matches like this will run automatically without asking. Continue?',
-    )
-    if (!ok) return
-    alwaysDoThis(item.id)
-    refresh()
-  })
-  extras.append(always)
-  if (rule) {
-    const openRules = button('btn btn-ghost btn-compact', 'Open Rules')
-    openRules.type = 'button'
-    openRules.addEventListener('click', () => navigate('rules'))
-    extras.append(openRules)
+  const planLines = item.plan?.length
+    ? item.plan
+    : parsePlanFromReasoning(item.reasoning)
+  if (planLines.length) {
+    const block = el('div', 'review-detail-plan')
+    block.append(sectionLabel(item.grantKind ? 'What happens' : 'Plan'))
+    const list = el('ol', 'review-detail-checklist')
+    for (const line of planLines) {
+      const row = el('li', 'review-detail-check')
+      row.textContent = line.replace(/^\s+/, '')
+      if (/^\s{2,}/.test(line)) row.classList.add('is-nested')
+      list.append(row)
+    }
+    block.append(list)
+    root.append(block)
   }
-  panel.append(extras)
 
-  return panel
+  const files = item.files?.length
+    ? item.files.map((f) => f.split('/').pop() || f)
+    : parseReasoningFiles(item.reasoning)
+  if (files.length && !item.grantKind) {
+    const block = el('div', 'review-detail-files')
+    block.append(sectionLabel('Files'))
+    const list = el('ul', 'review-detail-file-list')
+    for (const name of files) {
+      const row = el('li', 'review-detail-file')
+      row.append(el('span', 'review-detail-file-name', [name]))
+      list.append(row)
+    }
+    block.append(list)
+    root.append(block)
+  }
+
+  const showDest =
+    !item.grantKind &&
+    Boolean(item.files?.length) &&
+    /move|route|destination/i.test(item.editableAction + item.action)
+  if (showDest) {
+    const dest = el('div', 'review-detail-destination')
+    dest.append(sectionLabel('Destination'))
+    dest.append(
+      TextField({
+        value: item.editableAction,
+        placeholder: 'Move to…',
+        className: 'review-detail-destination-field',
+        onChange: (value) => updatePendingAction(item.id, value),
+      }),
+    )
+    root.append(dest)
+  }
+
+  return root
 }
 
-function fact(label: string, value: string) {
-  const row = el('div', 'review-report-row')
-  row.append(
-    el('span', 'review-report-label', [label]),
-    el('span', 'review-report-value', [value]),
-  )
-  return row
+function shortTrigger(trigger: string, automationName?: string): string | null {
+  const text = trigger.trim()
+  if (!text) return null
+  if (automationName && text.endsWith(` · ${automationName}`)) {
+    const prefix = text.slice(0, -(automationName.length + 3)).trim()
+    return prefix || null
+  }
+  return text
 }
 
-function cell(text: string, extra = '') {
-  return el('div', `log-cell ${extra}`.trim(), [text])
+function parseReasoningFiles(text?: string) {
+  if (!text) return []
+  if (text.includes('\n') && !text.includes(',')) return []
+  return text.split(/[,;]+/).map((s) => s.trim()).filter(Boolean)
 }
 
-function iconBtn(
-  svg: string,
-  label: string,
-  tone: 'approve' | 'reject',
-  onClick: (e: MouseEvent) => void,
-) {
-  const btn = button(`btn btn-icon tone-${tone}`)
-  btn.type = 'button'
-  btn.title = label
-  btn.setAttribute('aria-label', label)
-  btn.innerHTML = svg
-  btn.addEventListener('click', onClick)
-  return btn
-}
-
-function textBtn(label: string, ghost: boolean, onClick: () => void) {
-  const btn = button(
-    `btn ${ghost ? 'btn-ghost' : 'btn-primary'} btn-compact`,
-    label,
-  )
-  btn.addEventListener('click', onClick)
-  return btn
+function parsePlanFromReasoning(text?: string) {
+  if (!text) return []
+  if (!text.includes('\n')) return []
+  return text.split('\n').map((s) => s.trimEnd()).filter((s) => s.trim())
 }

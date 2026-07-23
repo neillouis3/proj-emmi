@@ -1,21 +1,23 @@
 import { el, button } from '@/lib/dom'
-import { EmptyState } from '@/components/shared/EmptyState'
+import { IconBtn } from '@/components/shared/controls'
+import { Tabs } from '@/components/shared/layout'
 import { relativeTime } from '@/lib/format'
 import { icons } from '@/lib/icons'
-import { connectorIconTile } from '@/lib/connectorLogos'
 import { labelPathText } from '@/lib/pathVariables'
 import {
   approvePending,
   counts,
+  filterInstalledAutomations,
   getState,
   navigate,
-  promoteRule,
+  newAutomation,
   recentRuns,
   rejectPending,
   restartDaemon,
   runAutomation,
 } from '@/app/store'
-import type { Automation, PendingAction, RecentRun, Rule } from '@/types/domain'
+import { bindScreen } from '@/lib/bindScreen'
+import type { Automation, PendingAction, RecentRun } from '@/types/domain'
 
 type ActivityFilter = 'all' | 'pending' | 'completed' | 'failed'
 
@@ -32,8 +34,7 @@ export function Overview() {
       (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt),
     )
     const needsAuth = state.connectors.filter((c) => c.authStatus === 'expired')
-    const promote = state.rules.filter((r) => r.promoteSuggested && !r.neverPromote)
-    const activeAutos = [...state.automations]
+    const activeAutos = filterInstalledAutomations(state.automations)
       .filter((a) => a.active)
       .sort((a, b) => +new Date(b.lastRunAt ?? 0) - +new Date(a.lastRunAt ?? 0))
       .slice(0, 4)
@@ -41,12 +42,26 @@ export function Overview() {
     page.replaceChildren()
     body.replaceChildren()
 
-    const health = el('div', `dashboard-health tone-${process.tone}`)
+    const health = el('div', `dashboard-health dashboard-status-banner tone-${process.tone}`)
     const healthLeft = el('div', 'dashboard-health-left')
     healthLeft.append(
       el('span', 'dashboard-health-dot'),
       el('span', 'dashboard-health-text', [
-        `${process.label} · ${stats.automationsActive} active · ${stats.connectorsConnected} connected`,
+        el('span', 'dashboard-health-status', [process.label]),
+        el('span', 'dashboard-health-sep', ['·']),
+        el('span', undefined, [
+          `${stats.automationsActive} automation${stats.automationsActive === 1 ? '' : 's'}`,
+        ]),
+        el('span', 'dashboard-health-sep', ['·']),
+        el('span', undefined, [
+          `${stats.connectorsConnected} connector${stats.connectorsConnected === 1 ? '' : 's'}`,
+        ]),
+        ...(stats.memoryMb != null
+          ? [
+              el('span', 'dashboard-health-sep', ['·']),
+              el('span', undefined, [`${stats.memoryMb} MB`]),
+            ]
+          : []),
       ]),
     )
     health.append(healthLeft)
@@ -141,21 +156,6 @@ export function Overview() {
     }
     side.append(autoSection)
 
-    if (promote.length) {
-      const promoteSection = el('section', 'dashboard-section')
-      promoteSection.append(
-        el('div', 'dashboard-section-head', [
-          el('div', 'dashboard-section-title', ['Ready to auto']),
-        ]),
-      )
-      const list = el('div', 'dashboard-side-list')
-      for (const rule of promote.slice(0, 3)) {
-        list.append(promoteRow(rule, render))
-      }
-      promoteSection.append(list)
-      side.append(promoteSection)
-    }
-
     split.append(reviewSection, side)
     body.append(split)
 
@@ -167,9 +167,7 @@ export function Overview() {
     )
     const links = el('div', 'dashboard-shortcuts')
     links.append(
-      shortcutBtn('New automation', icons.bolt, () =>
-        navigate('automation-new'),
-      ),
+      shortcutBtn('New automation', icons.bolt, () => newAutomation()),
       shortcutBtn('New rule', icons.rules, () => navigate('rule-new')),
       shortcutBtn('Connectors', icons.plug, () => navigate('connectors')),
       shortcutBtn('Open logs', icons.history, () => navigate('log')),
@@ -181,19 +179,19 @@ export function Overview() {
     const activityHead = el('div', 'dashboard-section-head')
     activityHead.append(
       el('div', 'dashboard-section-title', ['Recent activity']),
-      filterTabs(
-        [
+      Tabs({
+        value: filter,
+        options: [
           { value: 'all', label: 'All' },
           { value: 'pending', label: 'Pending' },
           { value: 'completed', label: 'Completed' },
           { value: 'failed', label: 'Failed' },
         ],
-        filter,
-        (next) => {
+        onChange: (next) => {
           filter = next as ActivityFilter
           render()
         },
-      ),
+      }),
     )
     activity.append(activityHead)
 
@@ -202,13 +200,11 @@ export function Overview() {
 
     if (!runs.length) {
       activity.append(
-        EmptyState({
-          title: 'No recent activity',
-          body:
-            filter === 'all'
-              ? 'Runs and review items will show up here.'
-              : 'Nothing matches this filter.',
-        }),
+        el('div', 'dashboard-empty-inline compact', [
+          filter === 'all'
+            ? 'No recent activity yet. Runs and review items will show up here.'
+            : 'Nothing matches this filter.',
+        ]),
       )
     } else {
       const table = el('div', 'log-table dashboard-activity-table')
@@ -223,8 +219,7 @@ export function Overview() {
     page.append(body)
   }
 
-  render()
-  return page
+  return bindScreen(page, render)
 }
 
 function automationRow(automation: Automation, refresh: () => void) {
@@ -251,25 +246,6 @@ function automationRow(automation: Automation, refresh: () => void) {
   return row
 }
 
-function promoteRow(rule: Rule, refresh: () => void) {
-  const row = el('div', 'dashboard-side-row')
-  const logo = connectorIconTile(rule.connectorId, true)
-  const copy = el('div', 'dashboard-side-copy')
-  copy.append(
-    el('div', 'dashboard-side-title', [rule.action]),
-    el('div', 'dashboard-side-meta', [
-      `Approved ${rule.approvalCount}× · switch to Auto`,
-    ]),
-  )
-  const go = button('connector-action pill primary', 'Auto')
-  go.addEventListener('click', () => {
-    promoteRule(rule.id)
-    refresh()
-  })
-  row.append(logo, copy, go)
-  return row
-}
-
 function shortcutBtn(label: string, svg: string, onClick: () => void) {
   const btn = button('dashboard-shortcut')
   btn.type = 'button'
@@ -292,13 +268,23 @@ function reviewTableRow(item: PendingAction, refresh: () => void) {
   const row = el('div', 'log-table-row dashboard-review-table-row')
   const actions = el('div', 'log-cell log-cell-action')
   actions.append(
-    iconBtn(icons.check, 'Approve', 'approve', () => {
-      approvePending(item.id)
-      refresh()
+    IconBtn({
+      svg: icons.check,
+      label: 'Approve',
+      tone: 'approve',
+      onClick: () => {
+        approvePending(item.id)
+        refresh()
+      },
     }),
-    iconBtn(icons.x, 'Reject', 'reject', () => {
-      rejectPending(item.id)
-      refresh()
+    IconBtn({
+      svg: icons.x,
+      label: 'Reject',
+      tone: 'reject',
+      onClick: () => {
+        rejectPending(item.id)
+        refresh()
+      },
     }),
   )
   row.append(
@@ -354,36 +340,4 @@ function kindLabel(kind: RecentRun['kind']) {
   if (kind === 'pending') return 'Pending'
   if (kind === 'completed') return 'Done'
   return 'Failed'
-}
-
-function filterTabs(
-  options: { value: string; label: string }[],
-  current: string,
-  onChange: (value: string) => void,
-) {
-  const bar = el('div', 'connector-tabs')
-  for (const option of options) {
-    const tab = button(
-      `connector-tab${option.value === current ? ' active' : ''}`,
-      option.label,
-    )
-    tab.addEventListener('click', () => onChange(option.value))
-    bar.append(tab)
-  }
-  return bar
-}
-
-function iconBtn(
-  svg: string,
-  label: string,
-  tone: 'approve' | 'reject',
-  onClick: () => void,
-) {
-  const btn = button(`btn btn-icon tone-${tone}`)
-  btn.type = 'button'
-  btn.title = label
-  btn.setAttribute('aria-label', label)
-  btn.innerHTML = svg
-  btn.addEventListener('click', onClick)
-  return btn
 }

@@ -16,10 +16,12 @@ const TITLES: Record<ScreenId, string> = {
   review: 'Review Queue',
   automations: 'Automations',
   'automation-new': 'New Automation',
+  'rule-new': 'New rule',
   connectors: 'Connectors',
-  log: 'Logs',
+  packs: 'Packs',
   rules: 'Rules',
-  'rule-new': 'New Rule',
+  log: 'Logs',
+  'detailed-log': 'Detailed Log',
   keybinds: 'Keybinds',
   appearance: 'Appearance',
   'path-variables': 'Path Variables',
@@ -49,7 +51,10 @@ export function WorkspaceHeader() {
 
   const sync = () => {
     const state = getState()
-    title.textContent = TITLES[state.route]
+    title.textContent =
+      state.route === 'automation-new' && state.editingAutomationId
+        ? 'Edit Automation'
+        : TITLES[state.route]
     back.disabled = !canGoBack()
     forward.disabled = !canGoForward()
   }

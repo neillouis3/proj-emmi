@@ -1,5 +1,5 @@
 import { el, button } from '@/lib/dom'
-import { EmptyState } from '@/components/shared/EmptyState'
+import { EmptyState } from '@/components/shared/layout'
 import {
   eventToKeybind,
   findKeybindConflict,

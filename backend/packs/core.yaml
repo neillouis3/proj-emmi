@@ -1,0 +1,9 @@
+id: core
+name: Core
+description: Files and shell — the always-on essentials every automation builds on.
+version: 1.0.0
+author: Emmi
+core: true
+logo: apple.svg
+connectors: [fs, shell]
+recipes: [clean-desktop, file-pdfs, screenshot-desktop]

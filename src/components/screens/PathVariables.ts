@@ -1,5 +1,6 @@
 import { el, button } from '@/lib/dom'
-import { EmptyState } from '@/components/shared/EmptyState'
+import { EmptyState } from '@/components/shared/layout'
+import { PathField } from '@/components/shared/controls'
 import { icons } from '@/lib/icons'
 import {
   createPathVariable,
@@ -85,13 +86,13 @@ function variableRow(variable: PathVariable, refresh: () => void) {
     updatePathVariable(variable.id, { name: name.value })
   })
 
-  const path = el('input', 'panel-input path-vars-path') as HTMLInputElement
-  path.type = 'text'
-  path.placeholder = '~/Pictures'
-  path.value = variable.path
-  path.spellcheck = false
-  path.addEventListener('input', () => {
-    updatePathVariable(variable.id, { path: path.value })
+  const path = PathField({
+    value: variable.path,
+    placeholder: '~/Pictures',
+    className: 'path-vars-path',
+    kind: 'folder',
+    title: 'Choose folder',
+    onChange: (value) => updatePathVariable(variable.id, { path: value }),
   })
 
   const remove = button('btn btn-icon path-vars-remove')

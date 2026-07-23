@@ -1,0 +1,19 @@
+id: git-status-home
+name: Check git status
+description: Shows status and recent commits for a local repo.
+trigger: manual
+active: false
+defaultMode: review
+keybind: null
+keybindEnabled: true
+script: |
+  status("~/Desktop")
+  gitLog("~/Desktop", 5)
+steps:
+  - tool: status
+    with:
+      repo: "~/Desktop"
+  - tool: gitLog
+    with:
+      repo: "~/Desktop"
+      n: 5

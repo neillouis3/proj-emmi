@@ -1,0 +1,9 @@
+id: safari
+name: Safari
+description: Drive Safari via AppleScript — browse, wait, read, and act on pages.
+version: 1.0.0
+author: Emmi
+core: false
+logo: safari.svg
+connectors: [safari]
+recipes: [safari-observe-act]

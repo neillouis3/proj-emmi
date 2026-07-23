@@ -1,0 +1,8 @@
+id: hello
+name: Hello Pack
+description: Example connector pack. Proves a new capability needs zero Emmi core edits.
+version: 1.0.0
+author: Emmi
+core: false
+connectors: [hello]
+recipes: [hello-demo]

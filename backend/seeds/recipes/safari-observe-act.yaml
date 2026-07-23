@@ -1,0 +1,53 @@
+id: safari-observe-act
+name: Observe page, then act
+description: Opens a page, waits for content, clicks, and saves the text.
+trigger: manual
+active: false
+defaultMode: review
+keybind: null
+keybindEnabled: true
+script: |
+  safari.browse("https://example.com")
+  retry 3, 800 {
+    safari.wait("h1", 10000)
+    let heading = safari.query("h1")
+    if heading {
+      log(heading)
+      let link = safari.query("a")
+      if link {
+        safari.click("a")
+        safari.wait("https://www.iana.org", 15000)
+        sleep(400)
+        let text = safari.pageText()
+        mkdir("~/Documents/Emmi Clips")
+        write("~/Documents/Emmi Clips/safari-observe-act.txt", text)
+        log("Saved ~/Documents/Emmi Clips/safari-observe-act.txt")
+      } else {
+        fail("No link on example.com yet")
+      }
+    } else {
+      fail("Heading not ready")
+    }
+  }
+steps:
+  - tool: safari.browse
+    with:
+      url: "https://example.com"
+  - tool: safari.wait
+    with:
+      urlOrSelector: "h1"
+      timeoutMs: "10000"
+  - tool: safari.query
+    with:
+      selector: "h1"
+  - tool: safari.click
+    with:
+      selector: "a"
+  - tool: write
+    with:
+      path: "~/Documents/Emmi Clips/safari-observe-act.txt"
+      content: "$text"
+  - tool: log
+    with:
+      message: "Observe → act clip saved"
+      category: safari

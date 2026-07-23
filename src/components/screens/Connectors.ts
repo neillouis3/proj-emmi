@@ -1,135 +1,81 @@
 import { el, button } from '@/lib/dom'
-import { PageToolbar } from '@/components/shared/PageToolbar'
-import { EmptyState } from '@/components/shared/EmptyState'
+import { EmptyState, alertBanner, sectionLabel, detailDescription, detailTitleRow, metaGrid, metaGridCell } from '@/components/shared/layout'
 import { relativeTime } from '@/lib/format'
 import { connectorIconTile } from '@/lib/connectorLogos'
 import { labelPathText } from '@/lib/pathVariables'
 import {
   connectConnector,
   disconnectConnector,
+  filterConnectorsForPrefs,
   getState,
   navigate,
+  showBlocking,
 } from '@/app/store'
+import { bindScreen } from '@/lib/bindScreen'
+import { Btn } from '@/components/shared/controls'
+import {
+  fetchChromeCdpStatus,
+  fetchConnectorPermissions,
+  fetchSafariJsStatus,
+  saveConnectorPermissions,
+  type GenericPermissions,
+  type GitPermissions,
+  type ShellPermissions,
+  type WebBrowserPermissions,
+} from '@/lib/daemonClient'
 import type { Connector, LogEntry } from '@/types/domain'
-
-type ConnectorFilter = 'all' | 'connected' | 'disconnected' | 'attention'
 
 export function Connectors() {
   const page = el('div', 'screen settings-screen')
-  let filter: ConnectorFilter = 'all'
   let selectedId: string | null = null
   const body = el('div', 'screen-body connectors-page')
 
   const render = () => {
     const state = getState()
-    const connected = state.connectors.filter((c) => c.authStatus === 'connected')
-    const attention = state.connectors.filter(
+    const connectors = filterConnectorsForPrefs(state.connectors)
+    const attention = connectors.filter(
       (c) => c.authStatus === 'expired' || c.authStatus === 'error',
     )
-    const disconnected = state.connectors.filter((c) => c.authStatus !== 'connected')
 
-    const visible =
-      filter === 'connected'
-        ? connected
-        : filter === 'disconnected'
-          ? disconnected
-          : filter === 'attention'
-            ? attention
-            : state.connectors
-
-    if (!visible.some((c) => c.id === selectedId)) {
-      selectedId = visible[0]?.id ?? null
+    if (!connectors.some((c) => c.id === selectedId)) {
+      selectedId = connectors[0]?.id ?? null
     }
-    const selected = visible.find((c) => c.id === selectedId) ?? null
+    const selected = connectors.find((c) => c.id === selectedId) ?? null
 
     page.replaceChildren()
     body.replaceChildren()
 
-    if (!state.connectors.length) {
+    if (!connectors.length) {
       body.append(
         EmptyState({
           title: 'No connectors yet',
-          body: 'Connect a service to start building automations.',
+          body: state.other.allowCloudConnectors
+            ? 'Connect a service to start building automations.'
+            : 'Cloud connectors are hidden. Enable them in Settings → Privacy.',
         }),
       )
       page.append(body)
       return
     }
 
-    body.append(
-      PageToolbar({
-        leading: [
-          filterTabs(
-            [
-              { value: 'all', label: 'All' },
-              { value: 'connected', label: `Connected (${connected.length})` },
-              {
-                value: 'attention',
-                label: attention.length
-                  ? `Attention (${attention.length})`
-                  : 'Attention',
-              },
-              { value: 'disconnected', label: 'Not connected' },
-            ],
-            filter,
-            (next) => {
-              filter = next as ConnectorFilter
-              render()
-            },
-          ),
-        ],
-      }),
-    )
-
-    if (attention.length && filter !== 'attention') {
-      const banner = button('connectors-attention-banner')
-      banner.type = 'button'
-      banner.append(
-        el('span', undefined, [
-          attention.length === 1
-            ? `${attention[0].name} needs re-auth`
-            : `${attention.length} connectors need re-auth`,
-        ]),
-        el('span', 'connectors-attention-action', ['Review']),
-      )
-      banner.addEventListener('click', () => {
-        filter = 'attention'
-        render()
-      })
-      body.append(banner)
-    }
-
-    if (!visible.length) {
+    if (attention.length) {
       body.append(
-        EmptyState({
-          title: 'No connectors here',
-          body: 'Try another filter.',
+        alertBanner({
+          message:
+            attention.length === 1
+              ? `${attention[0].name} needs re-auth`
+              : `${attention.length} connectors need re-auth`,
+          actionLabel: 'Review',
+          onClick: () => {
+            selectedId = attention[0]?.id ?? selectedId
+            render()
+          },
         }),
       )
-      page.append(body)
-      return
     }
 
     const split = el('div', 'connectors-split')
     const main = el('div', 'connectors-main')
-
-    if (filter === 'all') {
-      const popular = state.connectors.filter((c) => c.popular)
-      if (popular.length) {
-        const popularSection = el('section', 'connectors-section')
-        const grid = el('div', 'connector-popular-grid')
-        for (const connector of popular) {
-          grid.append(
-            popularCard(connector, connector.id === selectedId, () => {
-              selectedId = connector.id
-              render()
-            }, render),
-          )
-        }
-        popularSection.append(grid)
-        main.append(popularSection)
-      }
-    }
 
     const table = el('div', 'connector-table')
     const head = el('div', 'connector-table-head')
@@ -141,7 +87,7 @@ export function Connectors() {
     )
     table.append(head)
 
-    for (const connector of visible) {
+    for (const connector of connectors) {
       table.append(
         tableRow(
           connector,
@@ -166,44 +112,7 @@ export function Connectors() {
     page.append(body)
   }
 
-  render()
-  return page
-}
-
-function filterTabs(
-  options: { value: string; label: string }[],
-  current: string,
-  onChange: (value: string) => void,
-) {
-  const bar = el('div', 'connector-tabs')
-  for (const option of options) {
-    const tab = button(
-      `connector-tab${option.value === current ? ' active' : ''}`,
-      option.label,
-    )
-    tab.addEventListener('click', () => onChange(option.value))
-    bar.append(tab)
-  }
-  return bar
-}
-
-function popularCard(
-  connector: Connector,
-  selected: boolean,
-  onSelect: () => void,
-  refresh: () => void,
-) {
-  const card = button(
-    `connector-popular-card${selected ? ' is-selected' : ''}`,
-  )
-  card.type = 'button'
-  const left = el('div', 'connector-popular-left')
-  left.append(logoTile(connector), el('span', 'connector-popular-name', [connector.name]))
-  const action = statusAction(connector, refresh)
-  action.addEventListener('click', (e) => e.stopPropagation())
-  card.append(left, action)
-  card.addEventListener('click', onSelect)
-  return card
+  return bindScreen(page, render)
 }
 
 function tableRow(
@@ -244,48 +153,101 @@ function detailPanel(
   const autos = state.automations.filter((a) =>
     a.steps.some((s) => s.connectorId === connector.id),
   )
-  const rules = state.rules.filter((r) => r.connectorId === connector.id)
+  const rules = state.ruleLibrary.filter((r) => r.connectorId === connector.id)
+  const rulesInstalled =
+    connector.id === 'fs' ||
+    connector.id === 'shell' ||
+    connector.authStatus === 'connected'
   const pending = state.pending.filter((p) => p.connectorId === connector.id)
   const logs = state.logs
     .filter((l) => l.connectorId === connector.id)
     .slice(0, 4)
 
   const panel = el('section', 'connectors-detail')
-  const head = el('div', 'connectors-detail-head')
-  head.append(logoTile(connector))
-  const copy = el('div', 'connectors-detail-copy')
-  copy.append(
-    el('div', 'connectors-detail-title', [connector.name]),
-    el('div', 'connectors-detail-meta', [
-      `${connector.kind} · ${statusLabel(connector.authStatus)}`,
-    ]),
-  )
-  head.append(copy)
+
+  const head = el('div', 'detail-head')
+  const copy = el('div', 'detail-copy')
+  copy.append(detailTitleRow(connector.name, statusAction(connector, refresh)))
+  head.append(logoTile(connector), copy)
   panel.append(head)
 
-  panel.append(el('div', 'connectors-detail-desc', [connector.description]))
+  if (connector.description) {
+    panel.append(detailDescription(connector.description))
+  }
 
-  const actions = el('div', 'connectors-detail-actions')
-  actions.append(statusAction(connector, refresh))
-  panel.append(actions)
-
-  const facts = el('div', 'connectors-detail-facts')
-  facts.append(
-    fact('Scope', connector.scope),
-    fact('Status', statusLabel(connector.authStatus)),
-    fact('Automations', String(autos.length)),
-    fact('Rules', String(rules.length)),
+  panel.append(
+    metaGrid([
+      metaGridCell('Type', connector.kind),
+      metaGridCell('Automations', String(autos.length)),
+      metaGridCell(
+        'Rules',
+        rulesInstalled ? String(rules.length) : 'Not installed',
+      ),
+      metaGridCell(
+        connector.auth?.type === 'oauth2' ? 'Account' : 'Scope',
+        connector.auth?.type === 'oauth2'
+          ? connector.accountLabel ||
+              (connector.authStatus === 'connected' ? 'Connected' : 'Not connected')
+          : connector.scope,
+      ),
+    ]),
   )
-  panel.append(facts)
+
+  if (connector.auth?.type === 'oauth2' && connector.authStatus !== 'connected') {
+    panel.append(
+      el('p', 'connectors-detail-note muted', [
+        connector.auth.clientId.startsWith('YOUR_') ||
+        connector.auth.clientId.startsWith('<')
+          ? 'Set auth.clientId in this connector’s pack manifest, then Connect to sign in.'
+          : 'Connect opens your browser to sign in. Enable Accounts (Auth pack) first. Tokens stay on this Mac.',
+      ]),
+    )
+  }
+
+  if (!rulesInstalled) {
+    panel.append(
+      el('p', 'connectors-detail-note muted', [
+        'Connect this connector to install its rules.',
+      ]),
+    )
+  }
+  if (
+    connector.id === 'shell' ||
+    connector.id === 'fs' ||
+    connector.id === 'git' ||
+    connector.id === 'safari' ||
+    connector.id === 'chrome'
+  ) {
+    panel.append(
+      el('p', 'connectors-detail-note muted', [
+        'Filesystem = folders you pick; Shell = commands you allow; Git = repos under scopes; Safari/Chrome = local browser control (macOS).',
+      ]),
+    )
+  }
+
+  if (connector.id === 'shell') {
+    panel.append(shellPermissionsPanel(refresh))
+  }
+  if (connector.id === 'git') {
+    panel.append(gitPermissionsPanel(refresh))
+  }
+  if (connector.id === 'safari' || connector.id === 'chrome') {
+    panel.append(webBrowserPermissionsPanel(connector.id, refresh))
+  }
+  if (
+    connector.id !== 'shell' &&
+    connector.id !== 'git' &&
+    connector.id !== 'fs' &&
+    connector.id !== 'safari' &&
+    connector.id !== 'chrome' &&
+    connector.permission
+  ) {
+    panel.append(genericPermissionsPanel(connector, refresh))
+  }
 
   if (pending.length) {
     const block = el('div', 'connectors-detail-block')
-    block.append(
-      el('div', 'dashboard-section-title', ['In review']),
-      el('div', 'connectors-detail-note', [
-        `${pending.length} pending item${pending.length === 1 ? '' : 's'} use this connector.`,
-      ]),
-    )
+    block.append(sectionLabel('In review'))
     const openReview = button('connectors-usage-row')
     openReview.type = 'button'
     openReview.append(
@@ -301,7 +263,7 @@ function detailPanel(
 
   if (autos.length) {
     const block = el('div', 'connectors-detail-block')
-    block.append(el('div', 'dashboard-section-title', ['Used by']))
+    block.append(sectionLabel('Used by'))
     const list = el('div', 'connectors-usage-list')
     for (const automation of autos.slice(0, 4)) {
       const row = button('connectors-usage-row')
@@ -321,7 +283,7 @@ function detailPanel(
 
   if (logs.length) {
     const block = el('div', 'connectors-detail-block')
-    block.append(el('div', 'dashboard-section-title', ['Recent activity']))
+    block.append(sectionLabel('Recent activity'))
     const list = el('div', 'connectors-run-list')
     for (const entry of logs) list.append(logRow(entry, state))
     block.append(list)
@@ -329,6 +291,787 @@ function detailPanel(
   }
 
   return panel
+}
+
+function shellPermissionsPanel(refresh: () => void) {
+  const block = el('div', 'connectors-detail-block shell-permissions')
+  block.append(sectionLabel('Permissions'))
+  const body = el('div', 'shell-permissions-body')
+  body.append(el('p', 'muted', ['Loading…']))
+  block.append(body)
+
+  let draft: ShellPermissions = {
+    status: 'ask',
+    allowlist: [],
+    folderScopes: ['~/Desktop', '~/Downloads', '~/Documents'],
+    network: false,
+  }
+
+  const paint = () => {
+    body.replaceChildren()
+
+    const networkRow = el('div', 'settings-row shell-perm-row')
+    networkRow.append(
+      el('div', 'settings-row-copy', [
+        el('div', 'settings-row-title', ['Network']),
+        el(
+          'div',
+          'settings-row-desc muted',
+          ['Off by default. Blocks curl, wget, ssh, and similar CLIs.'],
+        ),
+      ]),
+    )
+    const toggle = button(
+      `settings-toggle${draft.network ? ' on' : ''}`,
+    )
+    toggle.type = 'button'
+    toggle.setAttribute('aria-pressed', draft.network ? 'true' : 'false')
+    toggle.append(el('span', 'settings-toggle-knob'))
+    toggle.addEventListener('click', () => {
+      draft = { ...draft, network: !draft.network }
+      paint()
+    })
+    networkRow.append(toggle)
+    body.append(networkRow)
+
+    const scopesBlock = el('div', 'shell-perm-section')
+    scopesBlock.append(el('div', 'shell-perm-label', ['Folder scopes']))
+    const chips = el('div', 'rule-create-chips shell-scope-chips')
+    for (const scope of draft.folderScopes) {
+      const chip = button('rule-create-chip', scope)
+      chip.type = 'button'
+      chip.title = 'Remove scope'
+      chip.addEventListener('click', () => {
+        draft = {
+          ...draft,
+          folderScopes: draft.folderScopes.filter((s) => s !== scope),
+        }
+        paint()
+      })
+      chips.append(chip)
+    }
+    scopesBlock.append(chips)
+    const addScope = Btn({
+      label: 'Add folder',
+      variant: 'ghost',
+      className: 'btn-compact',
+      onClick: () => {
+        void (async () => {
+          const picked = await window.emmi?.pickPath?.({
+            kind: 'folder',
+            title: 'Allow shell access in folder',
+          })
+          if (typeof picked !== 'string' || !picked) return
+          if (draft.folderScopes.includes(picked)) return
+          draft = { ...draft, folderScopes: [...draft.folderScopes, picked] }
+          paint()
+        })()
+      },
+    })
+    scopesBlock.append(addScope)
+    body.append(scopesBlock)
+
+    const allowBlock = el('div', 'shell-perm-section')
+    allowBlock.append(el('div', 'shell-perm-label', ['Allowlist']))
+    const allowList = el('div', 'rule-create-chips shell-allow-chips')
+    for (const bin of draft.allowlist) {
+      const chip = button('rule-create-chip', bin)
+      chip.type = 'button'
+      chip.title = 'Remove from allowlist'
+      chip.addEventListener('click', () => {
+        draft = {
+          ...draft,
+          allowlist: draft.allowlist.filter((b) => b !== bin),
+        }
+        paint()
+      })
+      allowList.append(chip)
+    }
+    allowBlock.append(allowList)
+
+    const addRow = el('div', 'shell-allow-add')
+    const input = el('input', 'field-input-control') as HTMLInputElement
+    input.type = 'text'
+    input.placeholder = 'ffmpeg, rsync, /usr/bin/echo…'
+    input.spellcheck = false
+    const addBin = Btn({
+      label: 'Add',
+      variant: 'ghost',
+      className: 'btn-compact',
+      onClick: () => {
+        const value = input.value.trim()
+        if (!value || draft.allowlist.includes(value)) return
+        draft = { ...draft, allowlist: [...draft.allowlist, value] }
+        input.value = ''
+        paint()
+      },
+    })
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        addBin.click()
+      }
+    })
+    addRow.append(input, addBin)
+    allowBlock.append(addRow)
+    body.append(allowBlock)
+
+    const save = Btn({
+      label: 'Save permissions',
+      variant: 'primary',
+      className: 'btn-compact',
+      onClick: () => {
+        void saveConnectorPermissions('shell', {
+          status: draft.status === 'denied' ? 'ask' : draft.status,
+          allowlist: draft.allowlist,
+          folderScopes: draft.folderScopes,
+          network: draft.network,
+          approvedCommands: draft.approvedCommands,
+        })
+          .then((res) => {
+            draft = res.permissions as ShellPermissions
+            refresh()
+          })
+          .catch(() => {
+            showBlocking({
+              id: `shell-perms-fail-${Date.now()}`,
+              kind: 'action-failed',
+              title: 'Could not save',
+              body: 'Shell permissions were not saved. Is the daemon running?',
+              primaryLabel: 'OK',
+              secondaryLabel: 'Dismiss',
+              connectorId: 'shell',
+            })
+          })
+      },
+    })
+    body.append(save)
+  }
+
+  void fetchConnectorPermissions('shell')
+    .then((res) => {
+      const p = res.permissions as ShellPermissions
+      draft = {
+        status: p.status ?? 'ask',
+        allowlist: Array.isArray(p.allowlist) ? p.allowlist : [],
+        folderScopes: Array.isArray(p.folderScopes)
+          ? p.folderScopes
+          : ['~/Desktop', '~/Downloads', '~/Documents'],
+        network: Boolean(p.network),
+        approvedCommands: Array.isArray(p.approvedCommands)
+          ? p.approvedCommands
+          : [],
+      }
+      paint()
+    })
+    .catch(() => {
+      body.replaceChildren(
+        el('p', 'muted', ['Could not load shell permissions.']),
+      )
+    })
+
+  return block
+}
+
+function folderScopesEditor(
+  scopes: string[],
+  onChange: (next: string[]) => void,
+) {
+  const wrap = el('div', 'shell-perm-section')
+  wrap.append(el('div', 'shell-perm-label', ['Folder scopes']))
+  const chips = el('div', 'rule-create-chips shell-scope-chips')
+  for (const scope of scopes) {
+    const chip = button('rule-create-chip', scope)
+    chip.type = 'button'
+    chip.title = 'Remove scope'
+    chip.addEventListener('click', () => {
+      onChange(scopes.filter((s) => s !== scope))
+    })
+    chips.append(chip)
+  }
+  wrap.append(chips)
+  wrap.append(
+    Btn({
+      label: 'Add folder',
+      variant: 'ghost',
+      className: 'btn-compact',
+      onClick: () => {
+        void (async () => {
+          const picked = await window.emmi?.pickPath?.({
+            kind: 'folder',
+            title: 'Allow folder',
+          })
+          if (typeof picked !== 'string' || !picked) return
+          if (scopes.includes(picked)) return
+          onChange([...scopes, picked])
+        })()
+      },
+    }),
+  )
+  return wrap
+}
+
+/** Manifest-driven permissions panel for pack connectors (not the built-in five). */
+function genericPermissionsPanel(connector: Connector, refresh: () => void) {
+  const decl = connector.permission ?? {}
+  const block = el('div', 'connectors-detail-block shell-permissions')
+  block.append(sectionLabel('Permissions'))
+  const body = el('div', 'shell-permissions-body')
+  body.append(el('p', 'muted', ['Loading…']))
+  block.append(body)
+
+  let draft: GenericPermissions = {
+    status: decl.grant ? 'ask' : 'granted',
+    folderScopes: decl.folderScopes ? ['~/Desktop', '~/Downloads', '~/Documents'] : [],
+    allowlist: [],
+    hostAllowlist: [],
+    flags: Object.fromEntries((decl.flags ?? []).map((f) => [f.id, false])),
+  }
+
+  const chipEditor = (
+    label: string,
+    values: string[],
+    placeholder: string,
+    onChange: (next: string[]) => void,
+  ) => {
+    const wrap = el('div', 'shell-perm-section')
+    wrap.append(el('div', 'shell-perm-label', [label]))
+    const chips = el('div', 'rule-create-chips shell-allow-chips')
+    for (const value of values) {
+      const chip = button('rule-create-chip', value)
+      chip.type = 'button'
+      chip.title = 'Remove'
+      chip.addEventListener('click', () => onChange(values.filter((v) => v !== value)))
+      chips.append(chip)
+    }
+    wrap.append(chips)
+    const input = document.createElement('input')
+    input.className = 'text-input btn-compact'
+    input.placeholder = placeholder
+    input.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return
+      const v = input.value.trim()
+      if (v && !values.includes(v)) onChange([...values, v])
+      input.value = ''
+    })
+    wrap.append(input)
+    return wrap
+  }
+
+  const paint = () => {
+    body.replaceChildren()
+
+    for (const flag of decl.flags ?? []) {
+      const row = el('div', 'settings-row shell-perm-row')
+      row.append(
+        el('div', 'settings-row-copy', [
+          el('div', 'settings-row-title', [flag.label]),
+          ...(flag.help
+            ? [el('div', 'settings-row-desc muted', [flag.help])]
+            : []),
+        ]),
+      )
+      const on = draft.flags[flag.id] === true
+      const toggle = button(`settings-toggle${on ? ' on' : ''}`)
+      toggle.type = 'button'
+      toggle.setAttribute('aria-pressed', on ? 'true' : 'false')
+      toggle.append(el('span', 'settings-toggle-knob'))
+      toggle.addEventListener('click', () => {
+        draft = { ...draft, flags: { ...draft.flags, [flag.id]: !on } }
+        paint()
+      })
+      row.append(toggle)
+      body.append(row)
+    }
+
+    if (decl.folderScopes) {
+      body.append(
+        folderScopesEditor(draft.folderScopes, (next) => {
+          draft = { ...draft, folderScopes: next }
+          paint()
+        }),
+      )
+    }
+    if (decl.allowlist) {
+      body.append(
+        chipEditor('Allowlist', draft.allowlist, 'Add and press Enter', (next) => {
+          draft = { ...draft, allowlist: next }
+          paint()
+        }),
+      )
+    }
+    if (decl.hostAllowlist) {
+      body.append(
+        chipEditor(
+          'Allowed hosts',
+          draft.hostAllowlist,
+          'example.com, press Enter',
+          (next) => {
+            draft = { ...draft, hostAllowlist: next }
+            paint()
+          },
+        ),
+      )
+    }
+
+    body.append(
+      Btn({
+        label: 'Save permissions',
+        variant: 'primary',
+        className: 'btn-compact',
+        onClick: () => {
+          void saveConnectorPermissions(connector.id, {
+            status: draft.status === 'denied' ? 'ask' : draft.status,
+            folderScopes: draft.folderScopes,
+            allowlist: draft.allowlist,
+            hostAllowlist: draft.hostAllowlist,
+            flags: draft.flags,
+          })
+            .then((res) => {
+              draft = res.permissions as GenericPermissions
+              refresh()
+            })
+            .catch(() => {
+              showBlocking({
+                id: `perms-fail-${Date.now()}`,
+                kind: 'action-failed',
+                title: 'Could not save',
+                body: `${connector.name} permissions were not saved. Is the daemon running?`,
+                primaryLabel: 'OK',
+                secondaryLabel: 'Dismiss',
+                connectorId: connector.id,
+              })
+            })
+        },
+      }),
+    )
+  }
+
+  void fetchConnectorPermissions(connector.id)
+    .then((res) => {
+      draft = res.permissions as GenericPermissions
+      paint()
+    })
+    .catch(() => paint())
+
+  return block
+}
+
+function gitPermissionsPanel(refresh: () => void) {
+  const block = el('div', 'connectors-detail-block shell-permissions')
+  block.append(sectionLabel('Permissions'))
+  const body = el('div', 'shell-permissions-body')
+  body.append(el('p', 'muted', ['Loading…']))
+  block.append(body)
+
+  let draft: GitPermissions = {
+    status: 'ask',
+    folderScopes: ['~/Desktop', '~/Downloads', '~/Documents'],
+    remoteOps: false,
+  }
+
+  const paint = () => {
+    body.replaceChildren()
+
+    const remoteRow = el('div', 'settings-row shell-perm-row')
+    remoteRow.append(
+      el('div', 'settings-row-copy', [
+        el('div', 'settings-row-title', ['Pull & push']),
+        el(
+          'div',
+          'settings-row-desc muted',
+          [
+            'Off by default. Uses network and git credentials; repos still limited to folder scopes.',
+          ],
+        ),
+      ]),
+    )
+    const toggle = button(
+      `settings-toggle${draft.remoteOps ? ' on' : ''}`,
+    )
+    toggle.type = 'button'
+    toggle.setAttribute('aria-pressed', draft.remoteOps ? 'true' : 'false')
+    toggle.append(el('span', 'settings-toggle-knob'))
+    toggle.addEventListener('click', () => {
+      draft = { ...draft, remoteOps: !draft.remoteOps }
+      paint()
+    })
+    remoteRow.append(toggle)
+    body.append(remoteRow)
+
+    body.append(
+      folderScopesEditor(draft.folderScopes, (next) => {
+        draft = { ...draft, folderScopes: next }
+        paint()
+      }),
+    )
+    body.append(
+      Btn({
+        label: 'Save permissions',
+        variant: 'primary',
+        className: 'btn-compact',
+        onClick: () => {
+          void saveConnectorPermissions('git', {
+            status: draft.status === 'denied' ? 'ask' : draft.status,
+            folderScopes: draft.folderScopes,
+            remoteOps: draft.remoteOps,
+          })
+            .then((res) => {
+              draft = res.permissions as GitPermissions
+              refresh()
+            })
+            .catch(() => {
+              showBlocking({
+                id: `git-perms-fail-${Date.now()}`,
+                kind: 'action-failed',
+                title: 'Could not save',
+                body: 'Git permissions were not saved. Is the daemon running?',
+                primaryLabel: 'OK',
+                secondaryLabel: 'Dismiss',
+                connectorId: 'git',
+              })
+            })
+        },
+      }),
+    )
+  }
+
+  void fetchConnectorPermissions('git')
+    .then((res) => {
+      const p = res.permissions as GitPermissions
+      draft = {
+        status: p.status ?? 'ask',
+        folderScopes: Array.isArray(p.folderScopes)
+          ? p.folderScopes
+          : ['~/Desktop', '~/Downloads', '~/Documents'],
+        remoteOps: Boolean(p.remoteOps),
+      }
+      paint()
+    })
+    .catch(() => {
+      body.replaceChildren(el('p', 'muted', ['Could not load git permissions.']))
+    })
+
+  return block
+}
+
+function webBrowserPermissionsPanel(
+  connectorId: 'safari' | 'chrome',
+  refresh: () => void,
+) {
+  const label = connectorId === 'chrome' ? 'Chrome' : 'Safari'
+  const block = el('div', 'connectors-detail-block shell-permissions')
+  block.append(sectionLabel('Permissions'))
+  const body = el('div', 'shell-permissions-body')
+  body.append(el('p', 'muted', ['Loading…']))
+  block.append(body)
+
+  let draft: WebBrowserPermissions = {
+    status: 'ask',
+    folderScopes: ['~/Desktop', '~/Downloads', '~/Documents'],
+    urlHostAllowlist: [],
+  }
+  let cdpState: 'up' | 'no_pages' | 'down' | 'unknown' = 'unknown'
+  let cdpPort = 9222
+  let cdpBusy = false
+  let safariJsState: 'ready' | 'needs_setting' | 'unavailable' | 'unknown' =
+    'unknown'
+  let safariJsDetail = ''
+  let safariJsBusy = false
+
+  const refreshCdp = () => {
+    if (connectorId !== 'chrome') return
+    const apply = (state: 'up' | 'no_pages' | 'down', port: number) => {
+      cdpState = state
+      cdpPort = port
+      paint()
+    }
+    if (window.emmi?.chromeCdpStatus) {
+      void window.emmi.chromeCdpStatus().then((s) => apply(s.state, s.port))
+      return
+    }
+    void fetchChromeCdpStatus()
+      .then((s) => apply(s.state, s.port))
+      .catch(() => {
+        cdpState = 'unknown'
+        paint()
+      })
+  }
+
+  const refreshSafariJs = () => {
+    if (connectorId !== 'safari') return
+    void fetchSafariJsStatus()
+      .then((s) => {
+        safariJsState = s.state
+        safariJsDetail = s.detail ?? ''
+        paint()
+      })
+      .catch(() => {
+        safariJsState = 'unknown'
+        safariJsDetail = ''
+        paint()
+      })
+  }
+
+  const paint = () => {
+    body.replaceChildren()
+    body.append(
+      el('p', 'muted', [
+        `macOS only. Empty host allowlist = any URL when ${label} is connected.`,
+      ]),
+    )
+
+    if (connectorId === 'chrome') {
+      const cdpBlock = el('div', 'shell-perm-section')
+      cdpBlock.append(el('div', 'shell-perm-label', ['Remote debugging (CDP)']))
+      const badge =
+        cdpState === 'up'
+          ? 'Up'
+          : cdpState === 'no_pages'
+            ? 'Up · no pages'
+            : cdpState === 'down'
+              ? 'Down'
+              : 'Checking…'
+      cdpBlock.append(
+        el('p', 'muted', [
+          `${badge} · port ${cdpPort}. Page actions (wait, click, pageText, tab screenshots) require CDP.`,
+        ]),
+      )
+      const row = el('div', 'btn-row')
+      row.append(
+        Btn({
+          label: cdpBusy ? 'Working…' : 'Enable remote debugging',
+          variant: 'primary',
+          className: 'btn-compact',
+          onClick: () => {
+            if (!window.emmi?.enableChromeDebugging) {
+              showBlocking({
+                id: `chrome-cdp-${Date.now()}`,
+                kind: 'action-failed',
+                title: 'Desktop app required',
+                body: 'Enable remote debugging from the Emmi desktop app (not the browser preview).',
+                primaryLabel: 'OK',
+                secondaryLabel: 'Dismiss',
+                connectorId: 'chrome',
+              })
+              return
+            }
+            cdpBusy = true
+            paint()
+            void window.emmi
+              .enableChromeDebugging({ confirm: true })
+              .then((res) => {
+                cdpBusy = false
+                if (res.cancelled) {
+                  paint()
+                  return
+                }
+                if (res.ok) {
+                  cdpState = res.state
+                  cdpPort = res.port
+                  paint()
+                  return
+                }
+                showBlocking({
+                  id: `chrome-cdp-fail-${Date.now()}`,
+                  kind: 'chrome-setup',
+                  title: 'Could not enable Chrome debugging',
+                  body:
+                    res.error ||
+                    `Start Chrome manually:\n${res.command ?? `Google Chrome --remote-debugging-port=${res.port}`}`,
+                  primaryLabel: 'Try again',
+                  secondaryLabel: 'Dismiss',
+                  connectorId: 'chrome',
+                })
+                paint()
+              })
+              .catch(() => {
+                cdpBusy = false
+                paint()
+              })
+          },
+        }),
+        Btn({
+          label: 'Refresh status',
+          variant: 'ghost',
+          className: 'btn-compact',
+          onClick: () => refreshCdp(),
+        }),
+      )
+      cdpBlock.append(row)
+      body.append(cdpBlock)
+    }
+
+    if (connectorId === 'safari') {
+      const jsBlock = el('div', 'shell-perm-section')
+      jsBlock.append(
+        el('div', 'shell-perm-label', ['JavaScript from Apple Events']),
+      )
+      const badge =
+        safariJsState === 'ready'
+          ? 'Ready'
+          : safariJsState === 'needs_setting'
+            ? 'Needs Develop setting'
+            : safariJsState === 'unavailable'
+              ? 'Unavailable'
+              : 'Checking…'
+      jsBlock.append(
+        el('p', 'muted', [
+          `${badge}. Page actions (wait, click, pageText, query) need Develop → Allow JavaScript from Apple Events. pageShot uses desktop capture.`,
+        ]),
+      )
+      if (safariJsDetail && safariJsState !== 'ready') {
+        jsBlock.append(el('p', 'muted', [safariJsDetail.slice(0, 240)]))
+      }
+      const row = el('div', 'btn-row')
+      row.append(
+        Btn({
+          label: 'Open Safari settings help',
+          variant: 'primary',
+          className: 'btn-compact',
+          onClick: () => {
+            showBlocking({
+              id: `safari-js-help-${Date.now()}`,
+              kind: 'safari-setup',
+              title: 'Enable Safari JavaScript from Apple Events',
+              body:
+                '1. Open Safari → Settings (or Preferences) → Advanced → show Develop menu in menu bar.\n' +
+                '2. Safari menu → Develop → Allow JavaScript from Apple Events.\n' +
+                '3. Keep at least one tab open, then refresh status here.\n\n' +
+                'Cross-origin or locked-down pages may still refuse JS.',
+              primaryLabel: 'Open Safari',
+              secondaryLabel: 'Dismiss',
+              connectorId: 'safari',
+            })
+          },
+        }),
+        Btn({
+          label: safariJsBusy ? 'Working…' : 'Refresh status',
+          variant: 'ghost',
+          className: 'btn-compact',
+          onClick: () => {
+            safariJsBusy = true
+            paint()
+            void fetchSafariJsStatus()
+              .then((s) => {
+                safariJsState = s.state
+                safariJsDetail = s.detail ?? ''
+              })
+              .catch(() => {
+                safariJsState = 'unknown'
+                safariJsDetail = ''
+              })
+              .finally(() => {
+                safariJsBusy = false
+                paint()
+              })
+          },
+        }),
+      )
+      jsBlock.append(row)
+      body.append(jsBlock)
+    }
+
+    body.append(
+      folderScopesEditor(draft.folderScopes, (next) => {
+        draft = { ...draft, folderScopes: next }
+        paint()
+      }),
+    )
+
+    const hostsBlock = el('div', 'shell-perm-section')
+    hostsBlock.append(el('div', 'shell-perm-label', ['URL host allowlist']))
+    const hostChips = el('div', 'rule-create-chips')
+    for (const host of draft.urlHostAllowlist) {
+      const chip = button('rule-create-chip', host)
+      chip.type = 'button'
+      chip.addEventListener('click', () => {
+        draft = {
+          ...draft,
+          urlHostAllowlist: draft.urlHostAllowlist.filter((h) => h !== host),
+        }
+        paint()
+      })
+      hostChips.append(chip)
+    }
+    hostsBlock.append(hostChips)
+    const hostRow = el('div', 'shell-allow-add')
+    const input = el('input', 'field-input-control') as HTMLInputElement
+    input.type = 'text'
+    input.placeholder = 'example.com'
+    const addHost = Btn({
+      label: 'Add',
+      variant: 'ghost',
+      className: 'btn-compact',
+      onClick: () => {
+        const value = input.value.trim().toLowerCase()
+        if (!value || draft.urlHostAllowlist.includes(value)) return
+        draft = {
+          ...draft,
+          urlHostAllowlist: [...draft.urlHostAllowlist, value],
+        }
+        input.value = ''
+        paint()
+      },
+    })
+    hostRow.append(input, addHost)
+    hostsBlock.append(hostRow)
+    body.append(hostsBlock)
+
+    body.append(
+      Btn({
+        label: 'Save permissions',
+        variant: 'primary',
+        className: 'btn-compact',
+        onClick: () => {
+          void saveConnectorPermissions(connectorId, {
+            status: draft.status === 'denied' ? 'ask' : draft.status,
+            folderScopes: draft.folderScopes,
+            urlHostAllowlist: draft.urlHostAllowlist,
+          })
+            .then((res) => {
+              draft = res.permissions as WebBrowserPermissions
+              refresh()
+            })
+            .catch(() => {
+              showBlocking({
+                id: `${connectorId}-perms-fail-${Date.now()}`,
+                kind: 'action-failed',
+                title: 'Could not save',
+                body: `${label} permissions were not saved. Is the daemon running?`,
+                primaryLabel: 'OK',
+                secondaryLabel: 'Dismiss',
+                connectorId,
+              })
+            })
+        },
+      }),
+    )
+  }
+
+  void fetchConnectorPermissions(connectorId)
+    .then((res) => {
+      const p = res.permissions as WebBrowserPermissions
+      draft = {
+        status: p.status ?? 'ask',
+        folderScopes: Array.isArray(p.folderScopes)
+          ? p.folderScopes
+          : ['~/Desktop', '~/Downloads', '~/Documents'],
+        urlHostAllowlist: Array.isArray(p.urlHostAllowlist)
+          ? p.urlHostAllowlist
+          : [],
+      }
+      paint()
+      refreshCdp()
+      refreshSafariJs()
+    })
+    .catch(() => {
+      body.replaceChildren(
+        el('p', 'muted', [`Could not load ${label} permissions.`]),
+      )
+    })
+
+  return block
 }
 
 function logRow(entry: LogEntry, state: ReturnType<typeof getState>) {
@@ -345,17 +1088,8 @@ function logRow(entry: LogEntry, state: ReturnType<typeof getState>) {
   return row
 }
 
-function fact(label: string, value: string) {
-  const row = el('div', 'review-report-row')
-  row.append(
-    el('span', 'review-report-label', [label]),
-    el('span', 'review-report-value', [value]),
-  )
-  return row
-}
-
 function logoTile(connector: Connector) {
-  return connectorIconTile(connector.id)
+  return connectorIconTile(connector.id, false, connector.logo)
 }
 
 function statusLabel(status: Connector['authStatus']) {
@@ -370,13 +1104,24 @@ function statusAction(
   refresh: () => void,
 ) {
   if (connector.authStatus === 'connected') {
-    const btn = button('btn btn-ghost btn-compact', 'Connected')
+    const btn = button('connector-action ghost pill quiet-action', 'Disconnect')
     btn.type = 'button'
     btn.addEventListener('click', () => {
-      disconnectConnector(connector.id)
-      refresh()
+      if (!getState().automationsPrefs.confirmDestructiveActions) {
+        disconnectConnector(connector.id)
+        refresh()
+        return
+      }
+      showBlocking({
+        id: `disconnect-${connector.id}`,
+        kind: 'confirm',
+        title: 'Are you sure?',
+        body: `Disconnect ${connector.name}? Automations using this connector may stop working until you reconnect.`,
+        primaryLabel: 'Disconnect',
+        secondaryLabel: 'Cancel',
+        connectorId: connector.id,
+      })
     })
-    btn.title = 'Disconnect'
     return btn
   }
 

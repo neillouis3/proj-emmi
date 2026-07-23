@@ -1,0 +1,17 @@
+id: screenshot-desktop
+name: Screenshot Desktop
+description: Takes a screenshot to the Desktop with a keybind.
+trigger: keybind
+active: false
+defaultMode: review
+keybind: CommandOrControl+Shift+E
+keybindEnabled: true
+script: |
+  exec("screencapture", ["-x", "~/Desktop/emmi-shot.png"])
+steps:
+  - tool: exec
+    with:
+      command: screencapture
+      args:
+        - "-x"
+        - "~/Desktop/emmi-shot.png"

@@ -4,6 +4,10 @@ import type { ScreenId, SystemKeybindId } from '@/types/domain'
 
 initTheme()
 
+if (window.emmi?.platform) {
+  document.documentElement.classList.add(`platform-${window.emmi.platform}`)
+}
+
 const rootEl = document.querySelector<HTMLDivElement>('#app')
 if (!rootEl) {
   throw new Error('Root element #app not found')
@@ -23,6 +27,8 @@ async function boot() {
   }
 
   const store = await import('@/app/store')
+  await store.loadPersistedPrefs()
+  store.startDaemonSync()
   store.pushTraySync()
   window.emmi.setShowInDock?.(store.getState().general.showInDock)
   window.emmi.setMenuBarTitle?.(store.getState().general.showMenuBarTitle)

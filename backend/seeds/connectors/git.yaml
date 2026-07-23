@@ -1,0 +1,56 @@
+id: git
+name: Git
+description: Local git status, checkout, init, add, and commit; optional pull/push behind Pull & push
+kind: Local
+scope: Local git + optional pull/push
+popular: true
+naming: bare
+logo: git.svg
+permission:
+  grant: true
+  folderScopes: true
+  flags:
+    - id: remoteOps
+      label: Pull & push
+      help: Off by default. Uses network and git credentials; repos still limited to folder scopes.
+rules:
+  - id: status
+    file: status.js
+    category: core
+    params: [repo]
+  - id: diff
+    file: diff.js
+    category: core
+    params: [repo, staged]
+  - id: gitLog
+    file: gitLog.js
+    category: core
+    params: [repo, n]
+  - id: branch
+    file: branch.js
+    category: core
+    params: [repo]
+  - id: init
+    file: init.js
+    category: core
+    params: [path]
+  - id: add
+    file: add.js
+    category: core
+    params: [repo, paths]
+  - id: commit
+    file: commit.js
+    category: core
+    params: [repo, message]
+  - id: checkout
+    file: checkout.js
+    category: core
+    params: [repo, ref]
+  - id: pull
+    file: pull.js
+    category: core
+    params: [repo, remote, branch]
+  - id: push
+    file: push.js
+    category: core
+    params: [repo, remote, branch]

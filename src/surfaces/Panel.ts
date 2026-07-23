@@ -1,7 +1,6 @@
 import { el, button } from '@/lib/dom'
 import { labelPathText } from '@/lib/pathVariables'
 import {
-  alwaysDoThis,
   approvePending,
   getLog,
   getPending,
@@ -53,41 +52,54 @@ function ReviewPanel(id: string, onDone: () => void) {
     el('p', 'field-value', [labelPathText(item.trigger, vars)]),
     el('p', 'field-value', [labelPathText(item.action, vars)]),
   )
-  if (item.reasoning) {
-    wrap.append(el('p', 'muted', [`Reasoning: ${item.reasoning}`]))
+  if (item.trustNote) {
+    wrap.append(
+      el(
+        'p',
+        `review-trust-note${item.undoable ? ' is-undoable' : ' is-not-undoable'}`,
+        [item.trustNote],
+      ),
+    )
+  }
+  const plan = item.plan?.length
+    ? item.plan
+    : item.reasoning?.includes('\n')
+      ? item.reasoning.split('\n').filter((s) => s.trim())
+      : []
+  if (plan.length) {
+    const list = el('ol', 'review-detail-checklist panel-checklist')
+    for (const line of plan.slice(0, 8)) {
+      const li = el('li', 'review-detail-check')
+      li.textContent = line.trim()
+      list.append(li)
+    }
+    wrap.append(list)
   }
 
-  const edit = el('input', 'review-edit-input') as HTMLInputElement
-  edit.type = 'text'
-  edit.value = item.editableAction
-  edit.addEventListener('change', () => updatePendingAction(item.id, edit.value))
-  wrap.append(el('div', 'field-label', ['Edit action']), edit)
-
-  const dont = el('label', 'check-row')
-  const box = el('input') as HTMLInputElement
-  box.type = 'checkbox'
-  dont.append(box, document.createTextNode("Don't suggest this again"))
+  const showDest =
+    !item.grantKind &&
+    Boolean(item.files?.length) &&
+    /move|route|destination/i.test(item.editableAction + item.action)
+  if (showDest) {
+    const edit = el('input', 'review-edit-input') as HTMLInputElement
+    edit.type = 'text'
+    edit.value = item.editableAction
+    edit.addEventListener('change', () => updatePendingAction(item.id, edit.value))
+    wrap.append(el('div', 'field-label', ['Destination']), edit)
+  }
 
   const actions = el('div', 'btn-row')
   actions.append(
-    action('Approve', 'btn btn-ghost', () => {
+    action(item.grantKind ? 'Allow & continue' : 'Approve', 'btn btn-primary', () => {
       approvePending(item.id)
       onDone()
     }),
     action('Reject', 'btn btn-ghost', () => {
-      rejectPending(item.id, box.checked)
-      onDone()
-    }),
-    action('Always do this', 'btn btn-ghost', () => {
-      const ok = confirm(
-        'Future files like this will move automatically without asking. Continue?',
-      )
-      if (!ok) return
-      alwaysDoThis(item.id)
+      rejectPending(item.id)
       onDone()
     }),
   )
-  wrap.append(dont, actions)
+  wrap.append(actions)
   return wrap
 }
 
@@ -127,10 +139,37 @@ function ErrorPanel(id: string) {
     el('p', 'error-text', [entry.error ? `Failed: ${entry.error}` : entry.summary]),
   )
   const row = el('div', 'btn-row')
-  row.append(
-    action('Retry / Fix', 'btn btn-primary', () => retryLog(entry.id)),
-    action('Open Logs', 'btn btn-ghost', () => window.emmi.openDashboard?.('log')),
-  )
+  const errText = entry.error ?? entry.summary ?? ''
+  if (
+    entry.connectorId === 'chrome' &&
+    (/\[cdp_unavailable\]|\[cdp_no_pages\]/i.test(errText) ||
+      /Chrome remote debugging is off|Enable remote debugging/i.test(errText))
+  ) {
+    row.append(
+      action('Enable debugging', 'btn btn-primary', () => {
+        void window.emmi.enableChromeDebugging?.({ confirm: true })
+      }),
+      action('Open Connectors', 'btn btn-ghost', () =>
+        window.emmi.openDashboard?.('connectors'),
+      ),
+    )
+  } else if (
+    entry.connectorId === 'safari' &&
+    (/\[safari_js_disabled\]/i.test(errText) ||
+      /JavaScript from Apple Events/i.test(errText))
+  ) {
+    row.append(
+      action('Open Connectors', 'btn btn-primary', () =>
+        window.emmi.openDashboard?.('connectors'),
+      ),
+      action('Open Logs', 'btn btn-ghost', () => window.emmi.openDashboard?.('log')),
+    )
+  } else {
+    row.append(
+      action('Retry / Fix', 'btn btn-primary', () => retryLog(entry.id)),
+      action('Open Logs', 'btn btn-ghost', () => window.emmi.openDashboard?.('log')),
+    )
+  }
   wrap.append(row)
   return wrap
 }

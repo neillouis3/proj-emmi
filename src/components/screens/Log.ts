@@ -1,7 +1,20 @@
 import { el, button } from '@/lib/dom'
-import { PageToolbar } from '@/components/shared/PageToolbar'
-import { EmptyState } from '@/components/shared/EmptyState'
-import { FilterBar } from '@/components/shared/FilterBar'
+import { FilterBar, Btn, IconBtn } from '@/components/shared/controls'
+import {
+  dataTable,
+  detailActions,
+  detailDescription,
+  detailTitleRow,
+  EmptyState,
+  metaGrid,
+  metaGridCell,
+  PageToolbar,
+  sectionLabel,
+  splitView,
+  tableCell,
+  tablePager,
+  tableSelectRow,
+} from '@/components/shared/layout'
 import { relativeTime } from '@/lib/format'
 import { icons } from '@/lib/icons'
 import { connectorIconTile } from '@/lib/connectorLogos'
@@ -9,22 +22,36 @@ import { labelPathText } from '@/lib/pathVariables'
 import {
   getState,
   navigate,
+  openDetailedLog,
   retryLog,
   undoLog,
 } from '@/app/store'
+import { bindScreen } from '@/lib/bindScreen'
 import type { LogEntry } from '@/types/domain'
+
+const LOG_PAGE_SIZE = 25
 
 export function Log() {
   const page = el('div', 'screen settings-screen')
   let search = ''
   let resultFilter = 'all'
   let rangeFilter = 'all'
+  let pageIndex = 0
   let selectedId: string | null = null
   const body = el('div', 'screen-body log-page')
 
   const render = () => {
     const state = getState()
-    const all = [...state.logs]
+    const all = state.logs.filter((entry) => {
+      const action = entry.action?.trim() ?? ''
+      const summary = entry.summary?.trim() ?? ''
+      if (/^fs\.(move|copy|rename|delete|mkdir)$/i.test(action)) return false
+      if (action === 'fs' || action === 'automation') return false
+      if (/^(Moved|Copied|Renamed|Deleted|Created directory)\b/i.test(summary)) {
+        return false
+      }
+      return true
+    })
     const now = Date.now()
 
     let items = all
@@ -46,8 +73,16 @@ export function Log() {
       items = items.filter((l) => now - +new Date(l.at) <= 7 * 24 * 3600_000)
     }
 
-    if (!items.some((l) => l.id === selectedId)) {
-      selectedId = items[0]?.id ?? null
+    const pageCount = Math.max(1, Math.ceil(items.length / LOG_PAGE_SIZE))
+    if (pageIndex > pageCount - 1) pageIndex = pageCount - 1
+    if (pageIndex < 0) pageIndex = 0
+    const pageItems = items.slice(
+      pageIndex * LOG_PAGE_SIZE,
+      pageIndex * LOG_PAGE_SIZE + LOG_PAGE_SIZE,
+    )
+
+    if (!pageItems.some((l) => l.id === selectedId)) {
+      selectedId = pageItems[0]?.id ?? items[0]?.id ?? null
     }
     const selected = items.find((l) => l.id === selectedId) ?? null
 
@@ -64,6 +99,7 @@ export function Log() {
               value: search,
               onChange: (v) => {
                 search = v
+                pageIndex = 0
                 render()
               },
             },
@@ -79,6 +115,7 @@ export function Log() {
               ],
               onChange: (v) => {
                 resultFilter = v
+                pageIndex = 0
                 render()
               },
             },
@@ -93,6 +130,7 @@ export function Log() {
               ],
               onChange: (v) => {
                 rangeFilter = v
+                pageIndex = 0
                 render()
               },
             },
@@ -125,47 +163,48 @@ export function Log() {
       return
     }
 
-    const split = el('div', 'log-split')
-    const main = el('div', 'log-main-col')
-
-    const table = el('div', 'log-table log-history-table')
-    table.append(headRow())
-    for (const entry of items) {
-      table.append(
-        logTableRow(
-          entry,
-          state,
-          entry.id === selectedId,
-          () => {
-            selectedId = entry.id
-            render()
-          },
-          render,
+    const tableWrap = el('div', 'log-table-wrap')
+    tableWrap.append(
+      dataTable({
+        className: 'log-history-table',
+        columns: ['Time', 'Automation', 'Details', 'Result', ''],
+        rows: pageItems.map((entry) =>
+          logTableRow(
+            entry,
+            state,
+            entry.id === selectedId,
+            () => {
+              selectedId = entry.id
+              render()
+            },
+            render,
+          ),
         ),
-      )
-    }
-    main.append(table)
+      }),
+      tablePager({
+        page: pageIndex,
+        pageSize: LOG_PAGE_SIZE,
+        total: items.length,
+        onChange: (next) => {
+          pageIndex = next
+          render()
+        },
+      }),
+    )
 
-    const side = el('aside', 'log-side')
-    if (selected) {
-      side.append(detailPanel(selected, state, render))
-    }
-
-    split.append(main, side)
-    body.append(split)
+    body.append(
+      splitView({
+        splitClass: 'log-split',
+        mainClass: 'log-main-col',
+        sideClass: 'log-side',
+        main: [tableWrap],
+        side: selected ? buildLogDetail(selected, state, render) : null,
+      }),
+    )
     page.append(body)
   }
 
-  render()
-  return page
-}
-
-function headRow() {
-  const row = el('div', 'log-table-row head')
-  for (const label of ['Time', 'Automation', 'Details', 'Result', '']) {
-    row.append(cell(label))
-  }
-  return row
+  return bindScreen(page, render)
 }
 
 function logTableRow(
@@ -180,47 +219,52 @@ function logTableRow(
     : entry.success
       ? 'Success'
       : entry.error
-        ? `Failed`
+        ? 'Failed'
         : 'Failed'
-
-  const row = button(
-    `log-table-row log-history-row ${
-      entry.undone ? 'undone' : entry.success ? 'ok' : 'fail'
-    }${selected ? ' is-selected' : ''}`,
-  )
-  row.type = 'button'
 
   const actionCell = el('div', 'log-cell log-cell-action')
   if (entry.reversible && !entry.undone) {
     actionCell.append(
-      iconBtn(icons.undo, 'Undo', (e) => {
-        e.stopPropagation()
-        undoLog(entry.id)
-        refresh()
+      IconBtn({
+        svg: icons.undo,
+        label: 'Undo',
+        onClick: (e) => {
+          e.stopPropagation()
+          undoLog(entry.id)
+          refresh()
+        },
       }),
     )
   } else if (!entry.success) {
     actionCell.append(
-      iconBtn(icons.refresh, 'Retry', (e) => {
-        e.stopPropagation()
-        retryLog(entry.id)
-        refresh()
+      IconBtn({
+        svg: icons.refresh,
+        label: 'Retry',
+        onClick: (e) => {
+          e.stopPropagation()
+          retryLog(entry.id)
+          refresh()
+        },
       }),
     )
   }
 
-  row.append(
-    cell(relativeTime(entry.at), 'log-cell-time'),
-    cell(entry.automationName),
-    cell(labelPathText(entry.action, state.pathVariables)),
-    cell(result, entry.undone ? '' : entry.success ? 'ok' : 'fail'),
-    actionCell,
-  )
-  row.addEventListener('click', onSelect)
-  return row
+  return tableSelectRow({
+    rowClass: 'log-history-row',
+    selected,
+    stateClass: entry.undone ? 'undone' : entry.success ? 'ok' : 'fail',
+    cells: [
+      tableCell(relativeTime(entry.at), 'log-cell-time'),
+      tableCell(entry.automationName),
+      tableCell(labelPathText(entry.action, state.pathVariables)),
+      tableCell(result, entry.undone ? '' : entry.success ? 'ok' : 'fail'),
+      actionCell,
+    ],
+    onSelect,
+  })
 }
 
-function detailPanel(
+function buildLogDetail(
   entry: LogEntry,
   state: ReturnType<typeof getState>,
   refresh: () => void,
@@ -229,80 +273,78 @@ function detailPanel(
   const automation = state.automations.find(
     (a) => a.name === entry.automationName,
   )
+  const vars = state.pathVariables
 
   const panel = el('section', 'log-detail')
-  const head = el('div', 'log-detail-head')
-  const logo = connectorIconTile(entry.connectorId)
-  const copy = el('div', 'log-detail-copy')
-  copy.append(
-    el('div', 'log-detail-title', [entry.automationName]),
-    el('div', 'log-detail-meta', [
-      `${relativeTime(entry.at)} · ${connector?.name ?? entry.connectorId}`,
-    ]),
-  )
-  head.append(logo, copy)
+
+  const primaryAction = logPrimaryAction(entry, refresh)
+  const head = el('div', 'detail-head')
+  const copy = el('div', 'detail-copy')
+  copy.append(detailTitleRow(entry.automationName, primaryAction))
+  head.append(connectorIconTile(entry.connectorId), copy)
   panel.append(head)
 
-  const status = el(
-    'div',
-    `log-detail-status ${
-      entry.undone ? 'undone' : entry.success ? 'ok' : 'fail'
-    }`,
-    [
+  panel.append(
+    detailDescription(
       entry.undone
-        ? 'Undone'
+        ? labelPathText(entry.summary, vars)
         : entry.success
-          ? 'Success'
-          : entry.error
-            ? `Failed · ${entry.error}`
-            : 'Failed',
-    ],
+          ? labelPathText(entry.action, vars)
+          : entry.error ?? labelPathText(entry.action, vars),
+    ),
   )
-  panel.append(status)
 
-  const actions = el('div', 'log-detail-actions')
-  if (entry.reversible && !entry.undone) {
-    actions.append(
-      textBtn('Undo', true, () => {
-        undoLog(entry.id)
-        refresh()
-      }),
-    )
-  } else if (!entry.success) {
-    actions.append(
-      textBtn('Retry', true, () => {
-        retryLog(entry.id)
-        refresh()
-      }),
-    )
+  const moves = entry.moves ?? []
+  const stats = [
+    metaGridCell('When', relativeTime(entry.at)),
+    metaGridCell('Connector', connector?.name ?? entry.connectorId),
+    metaGridCell('Result', logResultLabel(entry)),
+    metaGridCell(
+      'Files',
+      moves.length ? String(moves.length) : entry.reversible ? '—' : '—',
+    ),
+  ]
+  panel.append(metaGrid(stats))
+
+  if (moves.length) {
+    panel.append(logDestinationsBlock(moves, vars))
   }
+
+  const navActions: HTMLElement[] = []
   if (automation) {
-    actions.append(
-      textBtn('Open automation', true, () => navigate('automations')),
+    navActions.push(
+      Btn({
+        label: 'Open automation',
+        variant: 'ghost',
+        onClick: () => navigate('automations'),
+      }),
     )
   }
   if (connector) {
-    actions.append(
-      textBtn('Open connector', true, () => navigate('connectors')),
+    navActions.push(
+      Btn({
+        label: 'Open connector',
+        variant: 'ghost',
+        onClick: () => navigate('connectors'),
+      }),
     )
   }
-  if (actions.childNodes.length) panel.append(actions)
-
-  const vars = state.pathVariables
-  const facts = el('div', 'log-detail-facts')
-  facts.append(
-    fact('Summary', labelPathText(entry.summary, vars)),
-    fact('Action', labelPathText(entry.action, vars)),
-    fact('Connector', connector?.name ?? entry.connectorId),
-    fact('Reversible', entry.reversible ? 'Yes' : 'No'),
-  )
-  if (entry.error) facts.append(fact('Error', entry.error))
-  panel.append(facts)
+  if ((entry.moves?.length ?? 0) > 0) {
+    const detailed = quietAction('Detailed log', () =>
+      openDetailedLog(entry.id),
+    )
+    detailed.classList.add('log-detail-detailed-link')
+    navActions.push(detailed)
+  }
+  if (navActions.length) {
+    panel.append(detailActions(navActions))
+  }
 
   const related = state.logs
     .filter(
       (l) =>
         l.id !== entry.id &&
+        !isNoiseLogEntry(l) &&
         (l.automationName === entry.automationName ||
           l.connectorId === entry.connectorId),
     )
@@ -310,7 +352,7 @@ function detailPanel(
 
   if (related.length) {
     const block = el('div', 'log-detail-block')
-    block.append(el('div', 'dashboard-section-title', ['Related']))
+    block.append(sectionLabel('Related'))
     const list = el('div', 'log-related-list')
     for (const item of related) {
       const row = el(
@@ -332,38 +374,86 @@ function detailPanel(
   return panel
 }
 
-function fact(label: string, value: string) {
-  const row = el('div', 'review-report-row')
-  row.append(
-    el('span', 'review-report-label', [label]),
-    el('span', 'review-report-value', [value]),
-  )
-  return row
+function isNoiseLogEntry(entry: LogEntry) {
+  const action = entry.action?.trim() ?? ''
+  const summary = entry.summary?.trim() ?? ''
+  if (/^fs\.(move|copy|rename|delete|mkdir)$/i.test(action)) return true
+  if (action === 'fs' || action === 'automation') return true
+  if (/^(Moved|Copied|Renamed|Deleted|Created directory)\b/i.test(summary)) {
+    return true
+  }
+  return false
 }
 
-function cell(text: string, extra = '') {
-  return el('div', `log-cell ${extra}`.trim(), [text])
+function destFolder(toPath: string) {
+  const normalized = toPath.replace(/\\/g, '/')
+  const idx = normalized.lastIndexOf('/')
+  return idx > 0 ? normalized.slice(0, idx) : normalized
 }
 
-function textBtn(label: string, ghost: boolean, onClick: () => void) {
-  const btn = button(
-    `btn ${ghost ? 'btn-ghost' : 'btn-primary'} btn-compact`,
-    label,
-  )
-  btn.addEventListener('click', onClick)
-  return btn
-}
-
-function iconBtn(
-  svg: string,
-  label: string,
-  onClick: (e: MouseEvent) => void,
+/** Destination folder summary for the detail panel — files live in Detailed log. */
+function logDestinationsBlock(
+  moves: { from: string; to: string }[],
+  vars: ReturnType<typeof getState>['pathVariables'],
 ) {
-  const btn = button('btn btn-icon')
+  const byDest = new Map<string, number>()
+  for (const move of moves) {
+    const folder = destFolder(move.to)
+    byDest.set(folder, (byDest.get(folder) ?? 0) + 1)
+  }
+
+  const groups = [...byDest.entries()].sort(
+    (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
+  )
+
+  const block = el('div', 'log-detail-block')
+  block.append(sectionLabel('Destinations'))
+
+  const list = el('div', 'log-dest-list')
+  for (const [folder, count] of groups) {
+    const row = el('div', 'log-dest-row')
+    row.title = folder
+    row.append(
+      el('span', 'log-dest-folder', [labelPathText(folder, vars)]),
+      el('span', 'log-dest-count', [
+        `${count} file${count === 1 ? '' : 's'}`,
+      ]),
+    )
+    list.append(row)
+  }
+  block.append(list)
+  return block
+}
+
+function logResultLabel(entry: LogEntry) {
+  if (entry.undone) return 'Undone'
+  if (entry.success) return 'Success'
+  return 'Failed'
+}
+
+/** Muted text action — same weight as dashboard “Manage”. */
+function quietAction(label: string, onClick: () => void) {
+  const btn = button('connector-action ghost pill quiet-action', label)
   btn.type = 'button'
-  btn.title = label
-  btn.setAttribute('aria-label', label)
-  btn.innerHTML = svg
   btn.addEventListener('click', onClick)
   return btn
+}
+
+function logPrimaryAction(
+  entry: LogEntry,
+  refresh: () => void,
+): HTMLElement | undefined {
+  if (entry.reversible && !entry.undone) {
+    return quietAction('Undo', () => {
+      undoLog(entry.id)
+      refresh()
+    })
+  }
+  if (!entry.success && !entry.undone) {
+    return quietAction('Retry', () => {
+      retryLog(entry.id)
+      refresh()
+    })
+  }
+  return undefined
 }

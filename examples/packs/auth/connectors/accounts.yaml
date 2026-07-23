@@ -1,0 +1,11 @@
+id: accounts
+name: Accounts
+description: Enables packs to connect user accounts (OAuth) and call APIs via ctx.http.
+kind: Local
+scope: Account sign-in for API packs
+popular: true
+naming: dotted
+logo: accounts.svg
+permission:
+  grant: true
+rules: []

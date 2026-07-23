@@ -1,295 +1,166 @@
 import { el, button } from '@/lib/dom'
-import { SelectField } from '@/components/shared/FilterBar'
-import { createRule, getState, navigate } from '@/app/store'
-import type { RuleMode } from '@/types/domain'
+import { PageToolbar } from '@/components/shared/layout'
+import { Btn, FieldRow, SelectField, TextField } from '@/components/shared/controls'
+import { RuleCodeEditor } from '@/components/shared/RuleCodeEditor'
+import { createUserRule, getState, navigate } from '@/app/store'
+import { ALWAYS_ON_RULE_CONNECTORS } from '@/lib/ruleDef'
+import type { Connector } from '@/types/domain'
 
-const MODE_COPY: Record<RuleMode, { label: string; help: string }> = {
-  auto: {
-    label: 'Do it for me',
-    help: 'Runs on its own. Best once you trust the rule.',
-  },
-  review: {
-    label: 'Show in Review',
-    help: 'Adds it to Review Queue so you can approve or reject.',
-  },
-  ask: {
-    label: 'Ask me first',
-    help: 'Pops up and waits for your yes before doing anything.',
-  },
+const BLANK_TEMPLATE = `/**
+ * @param {unknown} input
+ */
+export default function myRule(input) {
+  return input
 }
+`
 
-const FIELD_COPY = {
-  templates: 'Start from a common pattern, then edit the fields below.',
-  connector: 'Which app or folder this rule uses to watch and act.',
-  trigger: 'Event or place that should wake the rule.',
-  match: 'Filters for extensions, names, commands, or patterns.',
-  action: 'The action Emmi proposes or runs when it matches.',
-  promote: 'After enough approvals, Emmi may offer to run this automatically.',
-} as const
+const LOG_TEMPLATE = `import { emitLog } from './_utils.js'
+
+/**
+ * @param {string} message
+ */
+export default function log(message) {
+  emitLog(message, 'custom')
+  return message
+}
+`
+
+type StarterId = 'blank' | 'log'
+
+function withFileDescription(code: string, description: string): string {
+  const desc = description.trim()
+  const body = code.trimStart()
+  if (!desc) return code
+  const comment = `/**\n * ${desc.replace(/\n/g, '\n * ')}\n */\n\n`
+  if (body.startsWith('/**')) {
+    return comment + body.replace(/^\/\*\*[\s\S]*?\*\/\s*/, '')
+  }
+  return comment + code
+}
 
 export function RuleNew() {
   const page = el('div', 'screen settings-screen')
-  const body = el('div', 'screen-body create-page')
-  body.append(
-    CreateRuleForm(
-      () => navigate('rules'),
-      () => navigate('rules'),
-    ),
-  )
+  const body = el('div', 'screen-body create-page create-page-flow create-page-rule')
+  body.append(NewRuleForm(() => navigate('rules')))
   page.append(body)
   return page
 }
 
-function CreateRuleForm(onDone: () => void, onCancel: () => void) {
-  const state = getState()
-  const wrap = el('div', 'auto-create')
-
-  const head = el('div', 'auto-create-head')
-  head.append(
-    el('div', 'auto-create-title-row', [
-      el('h1', 'auto-create-title', ['New Rule']),
-    ]),
+function ruleConnectors(connectors: Connector[]) {
+  return connectors.filter(
+    (c) =>
+      ALWAYS_ON_RULE_CONNECTORS.has(c.id) || c.authStatus === 'connected',
   )
-  wrap.append(head)
+}
 
-  const form = el('div', 'auto-create-form')
+function NewRuleForm(onDone: () => void) {
+  const state = getState()
+  const connected = ruleConnectors(state.connectors)
+  const wrap = el('div', 'rule-create-page')
 
-  let modeValue: RuleMode = state.defaultRuleMode ?? 'ask'
-  let neverPromote = false
-  let connectorId = state.connectors[0]?.id ?? 'fs'
+  let connectorId = connected[0]?.id ?? 'fs'
 
-  const TEMPLATES: {
-    label: string
-    trigger: string
-    match: string
-    action: string
-    connectorId: string
-    mode: RuleMode
-  }[] = [
-    {
-      label: 'Desktop screenshots',
-      trigger: 'File created in ~/Desktop',
-      match: '*.png AND filename contains "screenshot"',
-      action: 'Move to ~/Pictures/Screenshots',
-      connectorId: 'fs',
-      mode: 'review',
-    },
-    {
-      label: 'Downloads cleanup',
-      trigger: 'File created in ~/Downloads',
-      match: 'ext in (zip, dmg, pkg)',
-      action: 'Move to ~/Downloads/Archive',
-      connectorId: 'fs',
-      mode: 'ask',
-    },
-    {
-      label: 'Scaffold project',
-      trigger: 'Manual / CLI',
-      match: 'command == scaffold',
-      action: 'Run automation scaffold-project',
-      connectorId: 'git',
-      mode: 'review',
-    },
-  ]
+  const idInput = el('input', 'panel-input rule-create-id') as HTMLInputElement
+  idInput.type = 'text'
+  idInput.placeholder = 'id (optional)'
+  idInput.autocomplete = 'off'
+  idInput.spellcheck = false
 
-  const chips = el('div', 'rule-create-chips')
-  for (const t of TEMPLATES) {
-    const chip = button('rule-create-chip', t.label)
-    chip.type = 'button'
-    chip.addEventListener('click', () => applyTemplate(t))
-    chips.append(chip)
-  }
-  form.append(field('Start from', chips, FIELD_COPY.templates))
+  const description = TextField({
+    placeholder: 'What does this rule do?',
+    multiline: true,
+    className: 'rule-create-description',
+    onChange: () => {},
+  })
 
-  const connectorHost = el('div')
-  const connectorStatus = el('div', 'auto-create-warn')
-  connectorStatus.hidden = true
-
-  const paintConnectorStatus = () => {
-    const c = state.connectors.find((x) => x.id === connectorId)
-    if (!c) {
-      connectorStatus.hidden = true
-      connectorStatus.textContent = ''
-      return
-    }
-    if (c.authStatus === 'expired' || c.authStatus === 'error') {
-      connectorStatus.hidden = false
-      connectorStatus.textContent = `${c.name} needs reconnection before this rule can run.`
-      return
-    }
-    if (c.authStatus === 'available') {
-      connectorStatus.hidden = false
-      connectorStatus.textContent = `${c.name} isn’t connected yet. Connect it in Connectors.`
-      return
-    }
-    connectorStatus.hidden = true
-    connectorStatus.textContent = ''
-  }
-
+  const connectorHost = el('div', 'rule-create-connector')
   const mountConnector = () => {
     connectorHost.replaceChildren()
+    if (!connected.length) {
+      connectorHost.append(
+        el('p', 'auto-create-warn', ['Connect a connector first.']),
+      )
+      return
+    }
     const control = SelectField({
       label: 'Connector',
       value: connectorId,
-      options: state.connectors.map((c) => ({ value: c.id, label: c.name })),
+      options: connected.map((c) => ({ value: c.id, label: c.name })),
       onChange: (v) => {
         connectorId = v
-        mountConnector()
-        paintConnectorStatus()
       },
     })
-    control.classList.add('auto-create-select')
+    control.classList.add('rule-create-select')
     connectorHost.append(control)
   }
   mountConnector()
-  paintConnectorStatus()
 
-  const connectorControl = el('div')
-  connectorControl.append(connectorHost, connectorStatus)
-  form.append(field('Connector', connectorControl, FIELD_COPY.connector))
+  let starter: StarterId = 'blank'
+  const starters: { id: StarterId; label: string; code: string }[] = [
+    { id: 'blank', label: 'Blank', code: BLANK_TEMPLATE },
+    { id: 'log', label: 'Log message', code: LOG_TEMPLATE },
+  ]
 
-  const triggerInput = el('input', 'panel-input') as HTMLInputElement
-  triggerInput.type = 'text'
-  triggerInput.placeholder = 'File created in ~/Desktop'
-  triggerInput.autocomplete = 'off'
-  const matchInput = el('input', 'panel-input') as HTMLInputElement
-  matchInput.type = 'text'
-  matchInput.placeholder = '*.png AND filename contains "screenshot"'
-  matchInput.autocomplete = 'off'
-  const actionInput = el('input', 'panel-input') as HTMLInputElement
-  actionInput.type = 'text'
-  actionInput.placeholder = 'Move to ~/Pictures/Screenshots'
-  actionInput.autocomplete = 'off'
+  const chips = el('div', 'rule-create-chips')
+  const codeEditor = RuleCodeEditor({ value: BLANK_TEMPLATE })
 
-  form.append(
-    field('When should this run?', triggerInput, FIELD_COPY.trigger),
-    field('What should it match?', matchInput, FIELD_COPY.match),
-    field('What should it do?', actionInput, FIELD_COPY.action),
-  )
-
-  const modeBar = el('div', 'panel-segment panel-segment-3')
-  let modeField: HTMLElement
-  const paintMode = () => {
-    modeBar.replaceChildren()
-    for (const value of ['ask', 'review', 'auto'] as RuleMode[]) {
-      const tab = button(
-        `panel-segment-btn${modeValue === value ? ' active' : ''}`,
-        MODE_COPY[value].label,
+  const paintChips = () => {
+    chips.replaceChildren()
+    for (const item of starters) {
+      const chip = button(
+        `rule-create-chip${starter === item.id ? ' active' : ''}`,
+        item.label,
       )
-      tab.type = 'button'
-      tab.addEventListener('click', () => {
-        modeValue = value
-        paintMode()
-        paintPromoteRow()
-        const desc = modeField.querySelector('.auto-create-field-desc')
-        if (desc) desc.textContent = MODE_COPY[value].help
+      chip.type = 'button'
+      chip.addEventListener('click', () => {
+        starter = item.id
+        codeEditor.setValue(item.code)
+        paintChips()
+        codeEditor.focus()
       })
-      modeBar.append(tab)
+      chips.append(chip)
     }
   }
-  modeField = field('Mode', modeBar, MODE_COPY[modeValue].help)
-  paintMode()
-  form.append(modeField)
+  paintChips()
 
-  const promoteRow = el('div', 'auto-create-toggle-row')
-  const paintPromoteRow = () => {
-    promoteRow.replaceChildren()
-    if (modeValue === 'auto') {
-      promoteRow.hidden = true
+  const meta = el('div', 'rule-create-toolbar-meta')
+  meta.append(connectorHost, idInput, chips)
+
+  const create = button('btn btn-primary btn-compact', 'Create rule')
+  create.addEventListener('click', () => {
+    const code = codeEditor.getValue().trim()
+    if (!code) {
+      codeEditor.focus()
       return
     }
-    promoteRow.hidden = false
-    promoteRow.append(
-      el('span', 'auto-create-toggle-label', ['Don’t suggest Auto later']),
-    )
-    const toggle = button(`settings-toggle${neverPromote ? ' on' : ''}`)
-    toggle.type = 'button'
-    toggle.setAttribute('aria-label', 'Don’t suggest Auto later')
-    toggle.append(el('span', 'settings-toggle-knob'))
-    toggle.addEventListener('click', () => {
-      neverPromote = !neverPromote
-      toggle.classList.toggle('on', neverPromote)
+    const id = idInput.value.trim() || undefined
+    createUserRule({
+      connectorId,
+      id,
+      code: withFileDescription(codeEditor.getValue(), description.value),
     })
-    promoteRow.append(toggle)
-  }
-  paintPromoteRow()
-  form.append(fieldBlock(promoteRow, FIELD_COPY.promote))
+    onDone()
+  })
 
-  const applyTemplate = (t: (typeof TEMPLATES)[number]) => {
-    triggerInput.value = t.trigger
-    matchInput.value = t.match
-    actionInput.value = t.action
-    connectorId = t.connectorId
-    modeValue = t.mode
-    const desc = modeField.querySelector('.auto-create-field-desc')
-    if (desc) desc.textContent = MODE_COPY[t.mode].help
-    mountConnector()
-    paintConnectorStatus()
-    paintMode()
-    paintPromoteRow()
-    triggerInput.focus()
-  }
-
-  const foot = el('div', 'panel-form-foot')
-  foot.append(
-    buttonAction('Cancel', 'btn btn-ghost btn-compact', onCancel),
-    buttonAction('Create rule', 'btn btn-primary btn-compact', () => {
-      const trigger = triggerInput.value.trim()
-      const match = matchInput.value.trim()
-      const action = actionInput.value.trim()
-      if (!trigger) {
-        triggerInput.focus()
-        return
-      }
-      if (!match) {
-        matchInput.focus()
-        return
-      }
-      if (!action) {
-        actionInput.focus()
-        return
-      }
-      createRule({
-        trigger,
-        match,
-        action,
-        mode: modeValue,
-        connectorId,
-        origin: 'user',
-        ...(neverPromote && modeValue !== 'auto' ? { neverPromote: true } : {}),
-      })
-      onDone()
+  wrap.append(
+    PageToolbar({
+      leading: [meta],
+      actions: [
+        Btn({ label: 'Cancel', variant: 'ghost', onClick: onDone }),
+        create,
+      ],
     }),
+    FieldRow({
+      label: 'Description',
+      control: description,
+      className: 'auto-create-field rule-create-description-row',
+    }),
+    codeEditor,
   )
-  form.append(foot)
-  wrap.append(form)
 
-  queueMicrotask(() => triggerInput.focus())
+  queueMicrotask(() => {
+    codeEditor.focus()
+    codeEditor.editor.setSelectionRange(0, 0)
+  })
   return wrap
-}
-
-function field(label: string, control: HTMLElement, copy: string) {
-  const wrap = el('div', 'auto-create-field has-desc')
-  const row = el('div', 'auto-create-field-row')
-  const controlWrap = el('div', 'auto-create-field-control')
-  controlWrap.append(control)
-  row.append(controlWrap, el('div', 'auto-create-field-desc', [copy]))
-  wrap.append(el('span', 'auto-create-label', [label]), row)
-  return wrap
-}
-
-function fieldBlock(main: HTMLElement, copy: string) {
-  const wrap = el('div', 'auto-create-field has-desc')
-  const row = el('div', 'auto-create-field-row')
-  const control = el('div', 'auto-create-field-control')
-  control.append(main)
-  row.append(control, el('div', 'auto-create-field-desc', [copy]))
-  wrap.append(row)
-  return wrap
-}
-
-function buttonAction(label: string, className: string, onClick: () => void) {
-  const btn = button(className, label)
-  btn.addEventListener('click', onClick)
-  return btn
 }

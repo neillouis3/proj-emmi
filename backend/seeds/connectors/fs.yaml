@@ -1,0 +1,67 @@
+id: fs
+name: Filesystem
+description: Local file operations
+kind: Local
+scope: Folders you pick
+popular: true
+naming: bare
+logo: files.svg
+permission:
+  folderScopes: true
+rules:
+  - id: move
+    file: move.js
+    category: core
+    params: [input, output]
+  - id: copy
+    file: copy.js
+    category: core
+    params: [input, output]
+  - id: delete
+    file: delete.js
+    category: core
+    params: [path]
+  - id: rename
+    file: rename.js
+    category: core
+    params: [path, newName]
+  - id: mkdir
+    file: mkdir.js
+    category: core
+    params: [path]
+  - id: write
+    file: write.js
+    category: core
+    params: [path, content]
+  - id: sleep
+    file: sleep.js
+    category: core
+    params: [ms]
+  - id: fail
+    file: fail.js
+    category: core
+    params: [message]
+  - id: detect
+    file: detect.js
+    category: detection
+    params: [pattern, list]
+  - id: extract
+    file: extract.js
+    category: detection
+    params: [field, file]
+  - id: list
+    file: list.js
+    category: detection
+    params: [dir]
+  - id: lookup
+    file: lookup.js
+    category: routing
+    params: [value, table]
+  - id: log
+    file: log.js
+    category: logging
+    params: [message, category]
+  - id: route
+    file: route.js
+    category: routing
+    params: [files, table]

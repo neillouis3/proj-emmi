@@ -27,15 +27,25 @@ export function BlockingModalHost() {
     )
 
     const actions = el('div', 'blocking-actions')
-    const primary = button('btn btn-blocking', blocking.primaryLabel)
+    const primary = button(
+      blocking.kind === 'permissions' ? 'btn btn-primary' : 'btn btn-blocking',
+      blocking.primaryLabel,
+    )
     primary.addEventListener('click', () => resolveBlocking(true))
     actions.append(primary)
 
     if (blocking.secondaryLabel) {
       const secondary = button('btn btn-ghost', blocking.secondaryLabel)
       secondary.addEventListener('click', () => {
-        if (blocking.kind === 'ask') resolveBlocking(false)
-        else dismissBlocking()
+        if (
+          blocking.kind === 'ask' ||
+          blocking.kind === 'permissions' ||
+          blocking.kind === 'confirm' ||
+          blocking.kind === 'chrome-setup' ||
+          blocking.kind === 'safari-setup'
+        ) {
+          resolveBlocking(false)
+        } else dismissBlocking()
       })
       actions.append(secondary)
     }

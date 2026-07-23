@@ -1,163 +1,391 @@
 import { el, button } from '@/lib/dom'
-import { icons } from '@/lib/icons'
-import { SelectField } from '@/components/shared/FilterBar'
+import { PageToolbar, createTabs } from '@/components/shared/layout'
+import {
+  Btn,
+  FieldRow,
+  SelectField,
+  TextField,
+} from '@/components/shared/controls'
 import { KeybindField } from '@/components/shared/KeybindField'
-import { createAutomation, getState, navigate } from '@/app/store'
-import type { AutomationStep, AutomationTrigger } from '@/types/domain'
-
-const OPS_BY_CONNECTOR: Record<string, string[]> = {
-  fs: ['match', 'move', 'sort', 'mkdir', 'open', 'notify'],
-  git: ['init', 'status', 'commit', 'push'],
-  spotify: ['sync', 'add-track', 'play'],
-}
-
-const PARAM_HINT: Record<string, string> = {
-  match: '~/Desktop/*.png containing screenshot',
-  move: '~/Pictures/Screenshots',
-  sort: '~/Downloads',
-  mkdir: 'src, docs, assets',
-  open: 'editor',
-  notify: 'summary',
-  init: '.',
-  status: '--short',
-  commit: '-m "message"',
-  push: 'origin main',
-  sync: 'playlist name',
-  'add-track': 'track uri',
-  play: 'device',
-}
-
-const FIELD_COPY = {
-  name: 'A short name you’ll recognize in lists, reviews, and logs.',
-  description: 'Optional context for what this automation is for.',
-  trigger:
-    'How it starts: manually from Emmi, from a keyboard shortcut, a Git hook, or a CLI command.',
-  shortcut:
-    'The key combination that runs it. Required when Trigger is Keybind; otherwise leave empty.',
-  mode: 'Review first queues actions for approval. Ask each time prompts you before every step.',
-  active: 'When on, the automation can run as soon as it’s created.',
-  steps:
-    'Runs top to bottom. Each step picks a connector, an operation, and any params it needs.',
-} as const
+import { RuleStepList } from '@/components/shared/RuleStepList'
+import {
+  clearEditingAutomation,
+  createAutomation,
+  getState,
+  loadAutomationForEdit,
+  navigate,
+  saveAutomation,
+  showBlocking,
+} from '@/app/store'
+import { blankRuleSteps } from '@/lib/rules'
+import { fetchRecipe, fetchRecipes, type RecipeSummary } from '@/lib/daemonClient'
+import { normalizeStep } from '@/lib/stepOps'
+import type { Automation, AutomationStep, AutomationTrigger, RunMode } from '@/types/domain'
+import { formatRunMode, RUN_MODES } from '@/lib/runMode'
 
 export function AutomationNew() {
   const page = el('div', 'screen settings-screen')
-  const body = el('div', 'screen-body create-page')
-  body.append(NewAutomationForm(() => navigate('automations')))
+  const body = el('div', 'screen-body create-page create-page-automation')
+  const editingId = getState().editingAutomationId ?? undefined
+  body.append(
+    AutomationForm({
+      automationId: editingId,
+      onDone: () => {
+        clearEditingAutomation()
+        navigate('automations')
+      },
+    }),
+  )
   page.append(body)
   return page
 }
 
-function NewAutomationForm(onDone: () => void) {
-  const state = getState()
-  const wrap = el('div', 'auto-create')
-
-  const head = el('div', 'auto-create-head')
-  head.append(
-    el('div', 'auto-create-title-row', [
-      el('h1', 'auto-create-title', ['New Automation']),
-    ]),
-  )
-  wrap.append(head)
-
-  const form = el('div', 'auto-create-form')
-
-  const name = el('input', 'panel-input') as HTMLInputElement
-  name.type = 'text'
-  name.placeholder = 'Name'
-  name.autocomplete = 'off'
-
-  const description = el('input', 'panel-input') as HTMLInputElement
-  description.type = 'text'
-  description.placeholder = 'Description (optional)'
-  description.autocomplete = 'off'
-
-  form.append(
-    field('Name', name, FIELD_COPY.name),
-    field('Description', description, FIELD_COPY.description),
-  )
-
-  let triggerValue: AutomationTrigger = 'manual'
-  let keybindValue: string | null = null
-  let keybindEnabled = true
-  let active = true
-  let modeValue: 'review' | 'ask' = 'review'
-
-  const keybindHost = el('div', 'panel-keybind-host')
-  const keybindWarn = el('div', 'auto-create-warn')
-  keybindWarn.hidden = true
-
-  const paintKeybindMeta = () => {
-    const needs = triggerValue === 'keybind' && !keybindValue
-    keybindWarn.hidden = !needs
-    keybindWarn.textContent = needs
-      ? 'Add a shortcut. Required for Keybind trigger.'
-      : ''
-  }
-
-  const triggerHost = el('div')
-  const mountTrigger = () => {
-    triggerHost.replaceChildren()
-    const control = SelectField({
-      label: 'Trigger',
-      value: triggerValue,
-      options: [
-        { value: 'manual', label: 'Manual' },
-        { value: 'keybind', label: 'Keybind' },
-        { value: 'git-hook', label: 'Git hook' },
-        { value: 'cli', label: 'CLI command' },
-      ],
-      onChange: (v) => {
-        triggerValue = v as AutomationTrigger
-        mountTrigger()
-        paintKeybindMeta()
-      },
+function AutomationForm(opts: { automationId?: string; onDone: () => void }) {
+  const isEdit = !!opts.automationId
+  if (isEdit && opts.automationId) {
+    const cached = getState().automations.find((a) => a.id === opts.automationId)
+    if (!cached) {
+      const empty = el('div')
+      queueMicrotask(opts.onDone)
+      return empty
+    }
+    const wrap = el('div', 'auto-create-page')
+    wrap.append(el('p', 'auto-create-loading', ['Loading automation…']))
+    void loadAutomationForEdit(opts.automationId).then((fresh) => {
+      if (!fresh) {
+        opts.onDone()
+        return
+      }
+      wrap.replaceChildren(buildAutomationFormInner(fresh, opts))
     })
-    control.classList.add('auto-create-select')
-    triggerHost.append(control)
+    return wrap
   }
-  mountTrigger()
-  form.append(field('Trigger', triggerHost, FIELD_COPY.trigger))
 
-  const mountKeybind = () => {
-    keybindHost.replaceChildren()
-    keybindHost.append(
-      KeybindField({
-        value: keybindValue,
-        automations: state.automations,
-        disabled: !keybindEnabled || !state.keybinds.enabled,
+  return buildAutomationFormInner(undefined, opts)
+}
+
+function buildAutomationFormInner(
+  existing: Automation | undefined,
+  opts: { automationId?: string; onDone: () => void },
+) {
+  const isEdit = !!opts.automationId
+  const state = getState()
+  const wrap = el('div', 'auto-create-page')
+
+  const name = TextField({
+    value: existing?.name ?? '',
+    placeholder: 'Name',
+    className: 'auto-create-name',
+    onChange: () => {},
+  })
+
+  const initialDescription = existing?.description ?? ''
+
+  const description = TextField({
+    value: initialDescription,
+    placeholder: 'What does this automation do?',
+    multiline: true,
+    className: 'auto-create-description',
+    onChange: () => {},
+  })
+
+  let triggerValue: AutomationTrigger = existing?.trigger ?? 'manual'
+  let keybindValue: string | null = existing?.keybind ?? null
+  let cronValue = existing?.schedule?.cron?.trim() || '0 9 * * 1-5'
+  let watchPaths: string[] = existing?.watch?.paths?.length
+    ? [...existing.watch.paths]
+    : ['~/Downloads']
+  let watchDebounceMs = existing?.watch?.debounceMs ?? 1500
+  let active = existing?.active ?? true
+  let modeValue: RunMode = existing?.defaultMode ?? 'review'
+  let steps: AutomationStep[] = existing
+    ? existing.steps.map(normalizeStep)
+    : blankRuleSteps().map(normalizeStep)
+
+  const cronPresets = [
+    { cron: '0 9 * * 1-5', label: 'Weekdays 9am' },
+    { cron: '0 8 * * *', label: 'Daily 8am' },
+    { cron: '0 9 * * 1', label: 'Mondays 9am' },
+    { cron: '*/15 * * * *', label: 'Every 15m' },
+    { cron: '0 * * * *', label: 'Hourly' },
+  ]
+
+  const keybindSuggestions = [
+    { value: 'CommandOrControl+Shift+D', label: '⌘⇧D' },
+    { value: 'CommandOrControl+Shift+E', label: '⌘⇧E' },
+    { value: 'CommandOrControl+Shift+G', label: '⌘⇧G' },
+  ]
+
+  const watchQuickPaths = ['~/Desktop', '~/Downloads', '~/Documents']
+
+  const starterHost = el('div', 'auto-create-starter')
+  let recipes: RecipeSummary[] = []
+  let selectedStarter = 'blank'
+
+  const paintStarter = () => {
+    const chips = el('div', 'rule-create-chips')
+    const blankChip = button(
+      `rule-create-chip${selectedStarter === 'blank' ? ' active' : ''}`,
+      'Blank',
+    )
+    blankChip.type = 'button'
+    blankChip.addEventListener('click', () => {
+      selectedStarter = 'blank'
+      steps = blankRuleSteps().map(normalizeStep)
+      stepList.setSteps(steps)
+      paintStarter()
+    })
+    chips.append(blankChip)
+    for (const recipe of recipes) {
+      const chip = button(
+        `rule-create-chip${selectedStarter === recipe.id ? ' active' : ''}`,
+        recipe.name,
+      )
+      chip.type = 'button'
+      chip.title = recipe.description || recipe.triggerSummary
+      chip.addEventListener('click', () => hydrateFromRecipe(recipe))
+      chips.append(chip)
+    }
+    starterHost.replaceChildren(
+      chips,
+      el('p', 'muted auto-create-hint', [
+        'Start blank or from a curated recipe — edit anything before you create it.',
+      ]),
+    )
+  }
+
+  const hydrateFromRecipe = (summary: RecipeSummary) => {
+    selectedStarter = summary.id
+    paintStarter()
+    void (async () => {
+      let recipe: Automation
+      try {
+        recipe = await fetchRecipe(summary.id)
+      } catch {
+        return
+      }
+      name.value = recipe.name ?? ''
+      description.value = recipe.description ?? ''
+      triggerValue = recipe.trigger ?? 'manual'
+      if (recipe.schedule?.cron) {
+        cronValue = recipe.schedule.cron
+        cronField.value = cronValue
+      }
+      if (recipe.watch?.paths?.length) {
+        watchPaths = [...recipe.watch.paths]
+        if (typeof recipe.watch.debounceMs === 'number') {
+          watchDebounceMs = recipe.watch.debounceMs
+        }
+      }
+      keybindValue = recipe.keybind ?? null
+      modeValue = recipe.defaultMode ?? 'review'
+      // Installed copies start paused — the user opts in after reviewing.
+      active = false
+      activeToggle.classList.toggle('on', active)
+      steps = recipe.steps.map(normalizeStep)
+      mountTrigger()
+      syncTriggerHosts()
+      remountKeybind()
+      paintWatchPaths()
+      modeSeg.refresh()
+      stepList.setSteps(steps)
+    })()
+  }
+
+  const triggerHost = el('div', 'auto-create-picker')
+  const keybindHost = el('div', 'auto-create-keybind')
+  const scheduleHost = el('div', 'auto-create-schedule')
+  const watchHost = el('div', 'auto-create-watch')
+
+  const syncTriggerHosts = () => {
+    // Keybind is optional for any trigger; required UI emphasis when trigger=keybind
+    keybindHost.hidden = false
+    scheduleHost.hidden = triggerValue !== 'schedule'
+    watchHost.hidden = triggerValue !== 'watch'
+  }
+
+  const mountTrigger = () => {
+    triggerHost.replaceChildren(
+      SelectField({
+        label: 'Trigger',
+        value: triggerValue,
+        options: [
+          { value: 'manual', label: 'Manual' },
+          { value: 'keybind', label: 'Keybind' },
+          { value: 'schedule', label: 'Schedule' },
+          { value: 'watch', label: 'Folder watch' },
+          { value: 'cli', label: 'CLI' },
+        ],
         onChange: (v) => {
-          keybindValue = v
-          paintKeybindMeta()
+          triggerValue = v as AutomationTrigger
+          syncTriggerHosts()
+          mountTrigger()
+          paintKeybindExtras()
         },
       }),
     )
-    paintKeybindMeta()
   }
 
-  const shortcutMain = el('div')
-  shortcutMain.append(keybindHost, keybindWarn)
-  form.append(field('Shortcut', shortcutMain, FIELD_COPY.shortcut))
-  mountKeybind()
+  const remountKeybind = () => {
+    keybindHost.replaceChildren(
+      KeybindField({
+        value: keybindValue,
+        automations: state.automations,
+        ignoreId: existing?.id,
+        disabled: !state.keybinds.enabled,
+        onChange: (v) => {
+          keybindValue = v
+        },
+      }),
+      keybindExtras,
+    )
+    paintKeybindExtras()
+  }
 
-  const modeBar = el('div', 'panel-segment')
-  const paintMode = () => {
-    modeBar.replaceChildren()
-    for (const value of ['review', 'ask'] as const) {
-      const tab = button(
-        `panel-segment-btn${modeValue === value ? ' active' : ''}`,
-        value === 'review' ? 'Review first' : 'Ask each time',
+  const keybindExtras = el('div', 'auto-create-keybind-extras')
+  const paintKeybindExtras = () => {
+    keybindExtras.replaceChildren()
+    if (!state.keybinds.enabled) {
+      const hint = el('p', 'muted auto-create-hint')
+      const link = button('automation-detail-link', 'Open Keybinds')
+      link.type = 'button'
+      link.addEventListener('click', () => navigate('keybinds'))
+      hint.append(
+        document.createTextNode('Shortcuts are off. '),
+        link,
+        document.createTextNode(' to turn them on.'),
       )
-      tab.type = 'button'
-      tab.addEventListener('click', () => {
-        modeValue = value
-        paintMode()
-      })
-      modeBar.append(tab)
+      keybindExtras.append(hint)
+    } else {
+      keybindExtras.append(
+        el('p', 'muted auto-create-hint', [
+          triggerValue === 'keybind'
+            ? 'Required — capture a shortcut or tap a suggestion.'
+            : 'Optional — run this automation from the keyboard anytime.',
+        ]),
+      )
     }
+    const chips = el('div', 'rule-create-chips')
+    for (const sug of keybindSuggestions) {
+      const chip = button(
+        `rule-create-chip${keybindValue === sug.value ? ' active' : ''}`,
+        sug.label,
+      )
+      chip.type = 'button'
+      chip.title = sug.value
+      chip.addEventListener('click', () => {
+        keybindValue = sug.value
+        remountKeybind()
+      })
+      chips.append(chip)
+    }
+    keybindExtras.append(chips)
   }
-  paintMode()
-  form.append(field('Mode', modeBar, FIELD_COPY.mode))
+
+  const cronField = TextField({
+    value: cronValue,
+    placeholder: '0 9 * * 1-5',
+    className: 'auto-create-cron',
+    onChange: (v) => {
+      cronValue = v
+    },
+  })
+  const cronPresetsRow = el('div', 'rule-create-chips auto-create-cron-presets')
+  for (const preset of cronPresets) {
+    const chip = button('rule-create-chip', preset.label)
+    chip.type = 'button'
+    chip.addEventListener('click', () => {
+      cronValue = preset.cron
+      cronField.value = preset.cron
+    })
+    cronPresetsRow.append(chip)
+  }
+  scheduleHost.append(
+    FieldRow({
+      label: 'Cron',
+      control: cronField,
+      className: 'auto-create-field',
+    }),
+    cronPresetsRow,
+    el('p', 'muted auto-create-hint', [
+      'Example: weekdays at 9am opens your morning tabs without opening Emmi.',
+    ]),
+  )
+
+  const paintWatchPaths = () => {
+    watchHost.replaceChildren()
+    watchHost.append(el('div', 'shell-perm-label', ['Folders']))
+    const chips = el('div', 'rule-create-chips')
+    for (const folder of watchPaths) {
+      const chip = button('rule-create-chip', folder)
+      chip.type = 'button'
+      chip.title = 'Remove folder'
+      chip.addEventListener('click', () => {
+        watchPaths = watchPaths.filter((p) => p !== folder)
+        paintWatchPaths()
+      })
+      chips.append(chip)
+    }
+    watchHost.append(chips)
+
+    const quick = el('div', 'rule-create-chips')
+    for (const folder of watchQuickPaths) {
+      if (watchPaths.includes(folder)) continue
+      const chip = button('rule-create-chip', folder.replace('~/', ''))
+      chip.type = 'button'
+      chip.title = `Watch ${folder}`
+      chip.addEventListener('click', () => {
+        watchPaths = [...watchPaths, folder]
+        paintWatchPaths()
+      })
+      quick.append(chip)
+    }
+    if (quick.childNodes.length) {
+      watchHost.append(el('div', 'shell-perm-label', ['Quick add']))
+      watchHost.append(quick)
+    }
+
+    const addFolder = Btn({
+      label: 'Add folder',
+      variant: 'ghost',
+      className: 'btn-compact',
+      onClick: () => {
+        void (async () => {
+          const picked = await window.emmi?.pickPath?.({
+            kind: 'folder',
+            title: 'Watch folder',
+          })
+          if (typeof picked !== 'string' || !picked) return
+          if (watchPaths.includes(picked)) return
+          watchPaths = [...watchPaths, picked]
+          paintWatchPaths()
+        })()
+      },
+    })
+    watchHost.append(addFolder)
+    watchHost.append(
+      el('p', 'muted auto-create-hint', [
+        'Fires when files are added or changed — not when they leave (so moves won’t loop).',
+      ]),
+    )
+  }
+  paintWatchPaths()
+
+  mountTrigger()
+  syncTriggerHosts()
+  remountKeybind()
+
+  let stepList: ReturnType<typeof RuleStepList>
+
+  const modeSeg = createTabs({
+    getValue: () => modeValue,
+    variant: 'segment',
+    options: RUN_MODES.map((m) => ({ value: m, label: formatRunMode(m) })),
+    onChange: (v) => {
+      modeValue = v as RunMode
+      modeSeg.refresh()
+    },
+  })
 
   const activeToggle = button(`settings-toggle${active ? ' on' : ''}`)
   activeToggle.type = 'button'
@@ -167,216 +395,141 @@ function NewAutomationForm(onDone: () => void) {
     active = !active
     activeToggle.classList.toggle('on', active)
   })
-  const activeRow = el('div', 'auto-create-toggle-row')
-  activeRow.append(el('span', 'auto-create-toggle-label', ['Start active']), activeToggle)
-  form.append(fieldBlock(activeRow, FIELD_COPY.active))
 
-  let steps: AutomationStep[] = [
-    {
-      id: 's1',
-      connectorId: state.connectors[0]?.id ?? 'fs',
-      operation: 'match',
-      params: '',
+  let saving = false
+  const submit = Btn({
+    label: isEdit ? 'Save' : 'Create',
+    variant: 'primary',
+    onClick: () => {
+      void (async () => {
+        if (saving) return
+        // Snapshot from the real inputs immediately — don't let async work read stale UI.
+        const nameText = name.input.value.trim()
+        const descriptionText = description.input.value.trim()
+        if (!nameText) {
+          name.focus()
+          return
+        }
+        if (triggerValue === 'keybind' && !keybindValue) {
+          keybindHost.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+          return
+        }
+        if (triggerValue === 'schedule' && !cronValue.trim()) {
+          scheduleHost.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+          return
+        }
+        if (triggerValue === 'watch' && !watchPaths.length) {
+          watchHost.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+          return
+        }
+        const cleaned = stepList.getSteps()
+        if (!cleaned.length) return
+
+        const payload = {
+          name: nameText,
+          description: descriptionText,
+          trigger: triggerValue,
+          defaultMode: modeValue,
+          steps: cleaned,
+          keybind: keybindValue,
+          keybindEnabled: existing?.keybindEnabled ?? true,
+          active,
+          schedule:
+            triggerValue === 'schedule'
+              ? { cron: cronValue.trim() }
+              : null,
+          watch:
+            triggerValue === 'watch'
+              ? { paths: [...watchPaths], debounceMs: watchDebounceMs }
+              : null,
+        }
+        saving = true
+        submit.disabled = true
+
+        try {
+          const ok =
+            isEdit && opts.automationId
+              ? await saveAutomation(opts.automationId, payload)
+              : await createAutomation(payload)
+          if (ok) {
+            opts.onDone()
+            return
+          }
+          showBlocking({
+            id: `save-failed-${Date.now()}`,
+            kind: 'action-failed',
+            title: 'Could not save',
+            body: 'Emmi could not write this automation. Check that the daemon is running and try again.',
+            primaryLabel: 'OK',
+            secondaryLabel: 'Dismiss',
+            connectorId: 'fs',
+          })
+        } finally {
+          saving = false
+          submit.disabled = false
+        }
+      })()
     },
-  ]
-
-  const stepsHead = el('div', 'auto-create-steps-head')
-  const stepsTitle = el('div', 'auto-create-steps-title')
-  const stepsCount = el('span', 'panel-steps-count')
-  stepsTitle.append(el('span', undefined, ['Steps']), stepsCount)
-  const addStepBtn = action('Add step', 'btn btn-ghost btn-compact', () => {
-    steps = [
-      ...steps,
-      {
-        id: `s${Date.now()}`,
-        connectorId: state.connectors[0]?.id ?? 'fs',
-        operation: 'run',
-        params: '',
-      },
-    ]
-    renderSteps()
   })
-  stepsHead.append(stepsTitle, addStepBtn)
 
-  const stepsHost = el('div', 'panel-step-list')
-  const stepsMain = el('div', 'auto-create-field-main')
-  stepsMain.append(stepsHead, stepsHost)
-  form.append(fieldBlock(stepsMain, FIELD_COPY.steps, 'auto-create-steps-block'))
-
-  const syncStep = (
-    index: number,
-    patch: Partial<Pick<AutomationStep, 'connectorId' | 'operation' | 'params'>>,
-  ) => {
-    steps[index] = { ...steps[index], ...patch }
-  }
-
-  const renderSteps = () => {
-    stepsCount.textContent = String(steps.length)
-    stepsHost.replaceChildren()
-    steps.forEach((step, index) => {
-      const card = el('div', 'panel-step-card auto-step-card')
-      const top = el('div', 'panel-step-top')
-      top.append(el('span', 'panel-step-index', [String(index + 1)]))
-
-      const controls = el('div', 'panel-step-controls')
-      const up = iconAction(icons.chevronUp, 'Move up', 'btn btn-icon panel-step-btn', () => {
-        if (index === 0) return
-        ;[steps[index - 1], steps[index]] = [steps[index], steps[index - 1]]
-        renderSteps()
-      })
-      up.disabled = index === 0
-      const down = iconAction(
-        icons.chevronDown,
-        'Move down',
-        'btn btn-icon panel-step-btn',
-        () => {
-          if (index >= steps.length - 1) return
-          ;[steps[index + 1], steps[index]] = [steps[index], steps[index + 1]]
-          renderSteps()
-        },
-      )
-      down.disabled = index >= steps.length - 1
-      const remove = iconAction(icons.x, 'Remove step', 'btn btn-icon panel-step-btn', () => {
-        if (steps.length <= 1) return
-        steps = steps.filter((_, i) => i !== index)
-        renderSteps()
-      })
-      remove.disabled = steps.length <= 1
-      controls.append(up, down, remove)
-      top.append(controls)
-
-      const ops = OPS_BY_CONNECTOR[step.connectorId] ?? ['run']
-      let operationValue = ops.includes(step.operation)
-        ? step.operation
-        : (ops[0] ?? 'run')
-      if (operationValue !== step.operation) {
-        syncStep(index, { operation: operationValue })
-        operationValue = steps[index].operation
-      }
-
-      const connector = SelectField({
-        label: 'Connector',
-        value: step.connectorId,
-        options: state.connectors.map((c) => ({ value: c.id, label: c.name })),
-        onChange: (v) => {
-          const nextOps = OPS_BY_CONNECTOR[v] ?? ['run']
-          const nextOp = nextOps.includes(steps[index].operation)
-            ? steps[index].operation
-            : (nextOps[0] ?? 'run')
-          syncStep(index, { connectorId: v, operation: nextOp })
-          renderSteps()
-        },
-      })
-      connector.classList.add('auto-create-select')
-
-      const operation = SelectField({
-        label: 'Operation',
-        value: operationValue,
-        options: ops.map((op) => ({ value: op, label: op })),
-        onChange: (v) => {
-          syncStep(index, { operation: v })
-          renderSteps()
-        },
-      })
-      operation.classList.add('auto-create-select')
-
-      const params = el('input', 'panel-input') as HTMLInputElement
-      params.type = 'text'
-      params.placeholder = PARAM_HINT[operationValue] ?? 'Params'
-      params.value = steps[index].params
-      params.addEventListener('input', () => {
-        syncStep(index, { params: params.value })
-      })
-
-      const row = el('div', 'auto-step-row')
-      row.append(connector, operation)
-      card.append(top, row, params)
-      stepsHost.append(card)
-    })
-  }
-  renderSteps()
-
-  const foot = el('div', 'panel-form-foot')
-  foot.append(
-    action('Cancel', 'btn btn-ghost btn-compact', onDone),
-    action('Create automation', 'btn btn-primary btn-compact', () => {
-      if (!name.value.trim()) {
-        name.focus()
-        return
-      }
-      if (triggerValue === 'keybind' && !keybindValue) {
-        paintKeybindMeta()
-        return
-      }
-      const cleaned = steps
-        .map((s) => ({
-          ...s,
-          operation: s.operation.trim() || 'run',
-          params: s.params.trim(),
-        }))
-        .filter((s) => s.connectorId)
-      if (!cleaned.length) return
-
-      createAutomation({
-        name: name.value.trim(),
-        description: description.value.trim(),
-        trigger: triggerValue,
-        defaultMode: modeValue,
-        steps: cleaned,
-        keybind: keybindValue,
-        keybindEnabled,
-        active,
-      })
-      onDone()
+  wrap.append(
+    PageToolbar({
+      leading: [name],
+      actions: [
+        Btn({ label: 'Cancel', variant: 'ghost', onClick: opts.onDone }),
+        submit,
+      ],
+    }),
+    FieldRow({
+      label: 'Description',
+      control: description,
+      className: 'auto-create-field auto-create-description-row',
     }),
   )
-  form.append(foot)
-  wrap.append(form)
+
+  if (!isEdit) {
+    wrap.append(
+      el('div', 'auto-create-section-label', ['Start from']),
+      starterHost,
+    )
+    paintStarter()
+    void (async () => {
+      try {
+        recipes = await fetchRecipes()
+      } catch {
+        recipes = []
+      }
+      paintStarter()
+    })()
+  }
+
+  wrap.append(
+    el('div', 'auto-create-grid', [
+      FieldRow({ label: 'Trigger', control: triggerHost }),
+      FieldRow({ label: 'Mode', control: modeSeg.root }),
+    ]),
+    keybindHost,
+    scheduleHost,
+    watchHost,
+    el('div', 'auto-create-active-row', [
+      el('span', 'auto-create-active-label', ['Start active']),
+      activeToggle,
+    ]),
+    el('div', 'auto-create-section-label', ['Steps']),
+  )
+
+  stepList = RuleStepList({
+    steps,
+    onChange: (next) => {
+      steps = next
+      if (!isEdit) {
+        selectedStarter = 'blank'
+        paintStarter()
+      }
+    },
+  })
+  wrap.append(stepList)
 
   queueMicrotask(() => name.focus())
   return wrap
-}
-
-function field(label: string, control: HTMLElement, copy: string) {
-  const wrap = el('div', 'auto-create-field has-desc')
-  const row = el('div', 'auto-create-field-row')
-  const controlWrap = el('div', 'auto-create-field-control')
-  controlWrap.append(control)
-  row.append(controlWrap, el('div', 'auto-create-field-desc', [copy]))
-  wrap.append(el('span', 'auto-create-label', [label]), row)
-  return wrap
-}
-
-function fieldBlock(main: HTMLElement, copy: string, extraClass = '') {
-  const wrap = el(
-    'div',
-    `auto-create-field has-desc${extraClass ? ` ${extraClass}` : ''}`,
-  )
-  const row = el('div', 'auto-create-field-row')
-  const control = el('div', 'auto-create-field-control')
-  control.append(main)
-  row.append(control, el('div', 'auto-create-field-desc', [copy]))
-  wrap.append(row)
-  return wrap
-}
-
-function action(label: string, className: string, onClick: () => void) {
-  const btn = button(className, label)
-  btn.addEventListener('click', onClick)
-  return btn
-}
-
-function iconAction(
-  svg: string,
-  label: string,
-  className: string,
-  onClick: () => void,
-) {
-  const btn = button(className)
-  btn.type = 'button'
-  btn.title = label
-  btn.setAttribute('aria-label', label)
-  btn.innerHTML = svg
-  btn.addEventListener('click', onClick)
-  return btn
 }

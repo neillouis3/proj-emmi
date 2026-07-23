@@ -1,0 +1,9 @@
+id: git
+name: Git
+description: Status, sync, and history for local repositories.
+version: 1.0.0
+author: Emmi
+core: false
+logo: git.svg
+connectors: [git]
+recipes: [git-status-home, git-sync-loop]

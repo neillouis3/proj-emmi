@@ -1,0 +1,27 @@
+{
+  "name": "emmi-daemon",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Emmi local automation daemon",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json && mkdir -p dist/natives/sandbox dist/rules && cp -R rules dist/ && cp -R packs dist/ && cp -R seeds dist/ && cp src/natives/sandbox/worker.mjs dist/natives/sandbox/worker.mjs",
+    "start": "node dist/index.js",
+    "seed": "tsx src/seed.ts",
+    "test": "tsx --test src/**/*.test.ts"
+  },
+  "dependencies": {
+    "chokidar": "^5.0.0",
+    "croner": "^10.0.1",
+    "ws": "^8.21.1",
+    "yaml": "^2.8.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.13",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
+  }
+}

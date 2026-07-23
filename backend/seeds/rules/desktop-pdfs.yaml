@@ -1,0 +1,17 @@
+id: premade-desktop-pdfs
+when: manual-or-learned
+match:
+  watch: "~/Desktop"
+  glob: "~/Desktop/*"
+  extensions: [pdf]
+then:
+  tool: fs.move
+  with:
+    dest: "~/Documents/PDFs"
+mode: review
+origin: user
+connectorId: fs
+approvalCount: 0
+promoteSuggested: false
+trigger: "~/Desktop"
+action: Move to ~/Documents/PDFs

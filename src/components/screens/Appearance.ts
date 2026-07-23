@@ -1,9 +1,8 @@
 import { el, button } from '@/lib/dom'
 import { ListRow, SectionBlock } from '@/components/shared/SectionBlock'
-import { SelectField } from '@/components/shared/FilterBar'
+import { SelectField, ThemeField } from '@/components/shared/controls'
 import { icons } from '@/lib/icons'
 import { accentCss, UI_FONT_OPTIONS } from '@/lib/appearance'
-import { getPreference, setTheme, type ThemePreference } from '@/lib/theme'
 import { getState, setAppearancePrefs } from '@/app/store'
 
 export function Appearance() {
@@ -15,20 +14,7 @@ export function Appearance() {
     page.replaceChildren()
     body.replaceChildren()
 
-    const themeControl = SelectField({
-      label: 'Theme',
-      value: getPreference(),
-      options: [
-        { value: 'system', label: 'System' },
-        { value: 'light', label: 'Light' },
-        { value: 'dark', label: 'Dark' },
-      ],
-      onChange: (v) => {
-        setTheme(v as ThemePreference)
-        render()
-      },
-    })
-    themeControl.classList.add('settings-select')
+    const themeControl = ThemeField({ className: 'settings-select', onChange: render })
 
     const fontControl = SelectField({
       label: 'UI font',

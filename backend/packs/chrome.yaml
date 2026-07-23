@@ -1,0 +1,9 @@
+id: chrome
+name: Chrome
+description: Drive Chrome over CDP — browse, wait, read, and act on pages.
+version: 1.0.0
+author: Emmi
+core: false
+logo: chrome.svg
+connectors: [chrome]
+recipes: [chrome-observe-act, morning-tabs]

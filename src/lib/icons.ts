@@ -6,6 +6,7 @@ import filterSvg from 'heroicons/20/solid/funnel.svg?raw'
 import folderPlusSvg from 'heroicons/20/solid/folder-plus.svg?raw'
 import folderSvg from 'heroicons/20/solid/folder.svg?raw'
 import chevronDownSvg from 'heroicons/20/solid/chevron-down.svg?raw'
+import chevronLeftSvg from 'heroicons/20/solid/chevron-left.svg?raw'
 import chevronRightSvg from 'heroicons/20/solid/chevron-right.svg?raw'
 import chevronUpSvg from 'heroicons/20/solid/chevron-up.svg?raw'
 import chevronUpDownSvg from 'heroicons/20/solid/chevron-up-down.svg?raw'
@@ -72,6 +73,7 @@ export const icons = {
   chevronDown: icon(chevronDownSvg, 14),
   chevronUp: icon(chevronUpSvg, 14),
   chevronUpDown: icon(chevronUpDownSvg, 14),
+  chevronLeft: icon(chevronLeftSvg, 12),
   chevronRight: icon(chevronRightSvg, 12),
   branch: icon(branchSvg, 14),
   laptop: icon(laptopSvg, 14),
@@ -109,7 +111,7 @@ export const icons = {
   pencil: icon(pencilSvg, 14),
   paint: icon(paintBrushSvg, 14),
   swatch: icon(swatchSvg, 14),
-  typography: `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><text x="8" y="12" text-anchor="middle" font-size="11" font-weight="600" font-family="ui-sans-serif, system-ui, sans-serif" letter-spacing="-0.04em">Aa</text></svg>`,
+  typography: `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><text x="8" y="12" text-anchor="middle" font-size="11" font-weight="400" font-family="ui-sans-serif, system-ui, sans-serif" letter-spacing="-0.04em">Aa</text></svg>`,
   cloud: icon(cloudSvg, 14),
   cpu: icon(cpuChipSvg, 14),
   user: icon(userSvg, 14),

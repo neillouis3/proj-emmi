@@ -1,0 +1,18 @@
+id: hello-demo
+name: Hello demo
+description: Greets and shouts with the Hello connector.
+trigger: manual
+active: false
+defaultMode: review
+keybind: null
+keybindEnabled: true
+script: |
+  hello.greet("Emmi")
+  hello.shout("it works")
+steps:
+  - tool: hello.greet
+    with:
+      name: "Emmi"
+  - tool: hello.shout
+    with:
+      message: "it works"

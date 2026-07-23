@@ -1,0 +1,18 @@
+id: premade-desktop-screenshots
+when: manual-or-learned
+match:
+  watch: "~/Desktop"
+  glob: "~/Desktop/*"
+  extensions: [png]
+  contains: screenshot
+then:
+  tool: fs.move
+  with:
+    dest: "~/Pictures/Screenshots"
+mode: review
+origin: user
+connectorId: fs
+approvalCount: 0
+promoteSuggested: false
+trigger: "~/Desktop"
+action: Move to ~/Pictures/Screenshots

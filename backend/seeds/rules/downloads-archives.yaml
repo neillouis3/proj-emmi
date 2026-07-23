@@ -1,0 +1,17 @@
+id: premade-downloads-archives
+when: manual-or-learned
+match:
+  watch: "~/Downloads"
+  glob: "~/Downloads/*"
+  extensions: [zip, dmg, pkg]
+then:
+  tool: fs.move
+  with:
+    dest: "~/Downloads/Archive"
+mode: ask
+origin: user
+connectorId: fs
+approvalCount: 0
+promoteSuggested: false
+trigger: "~/Downloads"
+action: Move to ~/Downloads/Archive

@@ -1,0 +1,17 @@
+id: premade-downloads-pdfs
+when: manual-or-learned
+match:
+  watch: "~/Downloads"
+  glob: "~/Downloads/*"
+  extensions: [pdf]
+then:
+  tool: fs.move
+  with:
+    dest: "~/Documents/PDFs"
+mode: review
+origin: user
+connectorId: fs
+approvalCount: 0
+promoteSuggested: false
+trigger: "~/Downloads"
+action: Move to ~/Documents/PDFs

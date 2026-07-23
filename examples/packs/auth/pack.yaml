@@ -1,0 +1,9 @@
+id: auth
+name: Auth
+description: Account sign-in for packs that call APIs — enable Accounts, then connect each provider.
+version: 1.0.0
+author: Emmi
+core: true
+logo: accounts.svg
+connectors: [accounts]
+recipes: []

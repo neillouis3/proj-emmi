@@ -1,14 +1,13 @@
 import { el, button } from '@/lib/dom'
 import { ListRow, SectionBlock } from '@/components/shared/SectionBlock'
-import { SelectField } from '@/components/shared/FilterBar'
+import { Btn, SelectField, ThemeField } from '@/components/shared/controls'
 import { icons } from '@/lib/icons'
-import { getPreference, setTheme, type ThemePreference } from '@/lib/theme'
 import {
+  confirmResetPreferences,
+  exportPreferencesJson,
   getState,
   navigate,
   restartDaemon,
-  setDaemonStatus,
-  setDefaultRuleMode,
   setGeneralPrefs,
   setAppearancePrefs,
   setLlm,
@@ -16,6 +15,7 @@ import {
   setOtherPrefs,
   setAutomationPrefs,
   setKeybindPrefs,
+  stopDaemon,
 } from '@/app/store'
 
 export function Settings() {
@@ -134,20 +134,7 @@ export function Settings() {
       }),
     )
 
-    const themeControl = SelectField({
-      label: 'Theme',
-      value: getPreference(),
-      options: [
-        { value: 'system', label: 'System' },
-        { value: 'light', label: 'Light' },
-        { value: 'dark', label: 'Dark' },
-      ],
-      onChange: (v) => {
-        setTheme(v as ThemePreference)
-        render()
-      },
-    })
-    themeControl.classList.add('settings-select')
+    const themeControl = ThemeField({ className: 'settings-select', onChange: render })
 
     body.append(
       SectionBlock({
@@ -229,22 +216,6 @@ export function Settings() {
       }),
     )
 
-    const autoPromoteControl = SelectField({
-      label: 'Auto-promote after',
-      value: String(state.automationsPrefs.autoPromoteAfter),
-      options: [
-        { value: '0', label: 'Never' },
-        { value: '3', label: '3 approvals' },
-        { value: '5', label: '5 approvals' },
-        { value: '10', label: '10 approvals' },
-      ],
-      onChange: (v) => {
-        setAutomationPrefs({ autoPromoteAfter: Number(v) })
-        render()
-      },
-    })
-    autoPromoteControl.classList.add('settings-select')
-
     const concurrentControl = SelectField({
       label: 'Max concurrent runs',
       value: String(state.automationsPrefs.maxConcurrentRuns),
@@ -299,7 +270,6 @@ export function Settings() {
               render()
             },
           ),
-          customRow('Auto-promote rules', autoPromoteControl),
           customRow('Max concurrent runs', concurrentControl),
           linkRow(
             'Path variables',
@@ -341,20 +311,6 @@ export function Settings() {
         ],
       }),
     )
-
-    const modeControl = SelectField({
-      label: 'Default rule mode',
-      value: state.defaultRuleMode,
-      options: [
-        { value: 'review', label: 'Review' },
-        { value: 'ask', label: 'Ask' },
-      ],
-      onChange: (v) => {
-        setDefaultRuleMode(v as 'review' | 'ask')
-        render()
-      },
-    })
-    modeControl.classList.add('settings-select')
 
     const llmControl = SelectField({
       label: 'Model',
@@ -423,30 +379,29 @@ export function Settings() {
             },
           ),
           customRow('Auto-clear logs', clearLogsControl),
-          valueRow('Local data', 'Rules, logs, and preferences', [
-            textBtn(
-              'Export',
-              () => {
-                const blob = new Blob([JSON.stringify(getState(), null, 2)], {
+          valueRow('Local data', 'Preferences on this Mac', [
+            Btn({
+              label: 'Export',
+              variant: 'ghost',
+              onClick: () => {
+                const blob = new Blob([exportPreferencesJson()], {
                   type: 'application/json',
                 })
                 const url = URL.createObjectURL(blob)
                 const a = document.createElement('a')
                 a.href = url
-                a.download = 'emmi-data.json'
+                a.download = 'emmi-preferences.json'
                 a.click()
                 URL.revokeObjectURL(url)
               },
-              true,
-            ),
-            textBtn(
-              'Reset',
-              () => {
-                localStorage.clear()
-                location.reload()
+            }),
+            Btn({
+              label: 'Reset',
+              variant: 'ghost',
+              onClick: () => {
+                confirmResetPreferences()
               },
-              true,
-            ),
+            }),
           ]),
         ],
       }),
@@ -454,20 +409,23 @@ export function Settings() {
 
     const advancedRows = [
       valueRow('Background process', statusLabel(state.daemonStatus), [
-        textBtn('Restart', () => {
-          restartDaemon()
-          render()
-        }, true),
-        textBtn(
-          'Stop',
-          () => {
-            setDaemonStatus('stopped')
+        Btn({
+          label: 'Restart',
+          variant: 'ghost',
+          onClick: () => {
+            restartDaemon()
             render()
           },
-          true,
-        ),
+        }),
+        Btn({
+          label: 'Stop',
+          variant: 'ghost',
+          onClick: () => {
+            stopDaemon()
+            render()
+          },
+        }),
       ]),
-      customRow('Default rule mode', modeControl),
       customRow('Model', llmControl),
       toggleRow('Keep detailed logs', state.other.keepDetailedLogs, (v) => {
         setOtherPrefs({ keepDetailedLogs: v })
@@ -509,7 +467,7 @@ export function Settings() {
       advancedRows.splice(
         3,
         0,
-        inputRow('Local model path', state.llm.localModelPath, (v) => {
+        pathInputRow('Local model path', state.llm.localModelPath, (v) => {
           setLlm({ localModelPath: v })
           render()
         }),
@@ -599,14 +557,15 @@ function toggleRow(
 function linkRow(label: string, meta: string, onClick: () => void) {
   const row = button('settings-row settings-row-button')
   row.type = 'button'
-  const left = el('div', 'settings-row-copy')
-  left.append(
-    el('span', 'settings-row-label', [label]),
-    el('span', 'settings-row-meta', [meta]),
-  )
+  row.append(el('span', 'settings-row-label', [label]))
+  const trailing = el('div', 'settings-row-trailing')
+  if (meta) {
+    trailing.append(el('span', 'settings-row-meta', [meta]))
+  }
   const chevron = el('span', 'settings-row-chevron')
   chevron.innerHTML = icons.chevronRight
-  row.append(left, chevron)
+  trailing.append(chevron)
+  row.append(trailing)
   row.addEventListener('click', onClick)
   return row
 }
@@ -647,11 +606,33 @@ function inputRow(
   return row
 }
 
-function textBtn(label: string, onClick: () => void, ghost = false) {
-  const btn = button(
-    `btn ${ghost ? 'btn-ghost' : 'btn-primary'} btn-compact`,
-    label,
-  )
-  btn.addEventListener('click', onClick)
-  return btn
+function pathInputRow(
+  label: string,
+  value: string,
+  onChange: (value: string) => void,
+) {
+  const row = ListRow({ className: 'settings-row-input settings-row-path' })
+  row.append(el('span', 'settings-row-label', [label]))
+  const wrap = el('div', 'path-field settings-path-field')
+  const input = el('input', 'settings-inline-input') as HTMLInputElement
+  input.type = 'text'
+  input.value = value
+  input.placeholder = '~/models/…'
+  input.addEventListener('change', () => onChange(input.value))
+  const browse = button('btn btn-ghost btn-compact path-field-browse', 'Browse')
+  browse.type = 'button'
+  browse.addEventListener('click', () => {
+    void (async () => {
+      const picked = await window.emmi?.pickPath?.({
+        kind: 'file',
+        title: 'Choose local model file',
+      })
+      if (typeof picked !== 'string' || !picked) return
+      input.value = picked
+      onChange(picked)
+    })()
+  })
+  wrap.append(input, browse)
+  row.append(wrap)
+  return row
 }

@@ -1,0 +1,25 @@
+id: shell
+name: Shell
+description: Allowlisted local CLI commands and scripts
+kind: Local
+scope: Allowlisted CLI commands
+popular: true
+naming: bare
+logo: shell.svg
+permission:
+  grant: true
+  folderScopes: true
+  allowlist: true
+  flags:
+    - id: network
+      label: Network
+      help: Allow commands that reach the network.
+rules:
+  - id: exec
+    file: exec.js
+    category: core
+    params: [command, args, opts]
+  - id: script
+    file: script.js
+    category: core
+    params: [path, args]

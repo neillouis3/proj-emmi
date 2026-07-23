@@ -1,0 +1,35 @@
+id: clean-desktop
+name: Clean Desktop
+description: Tidies loose Desktop files into the right folders.
+trigger: manual
+active: true
+defaultMode: review
+keybind: CommandOrControl+Shift+D
+keybindEnabled: true
+script: |
+  let files = list("~/Desktop/*")
+  route(files, {
+    "png,jpg,jpeg,gif,webp,heic,heif,tiff,tif,bmp,svg,ico,raw,cr2,nef,orf,dng": "~/Pictures",
+    "pdf,doc,docx,dot,docm,rtf,txt,md,odt,ods,odp,xls,xlsx,xlsm,csv,tsv,ppt,pptx,pps,ppsx,key,numbers,pages,epub,mobi": "~/Documents",
+    "mp4,mov,m4v,avi,mkv,webm,wmv,flv,mpg,mpeg,m2v,3gp": "~/Movies",
+    "mp3,m4a,aac,wav,flac,aiff,aif,ogg,opus,wma": "~/Music",
+    default: "~/Documents/Other"
+  })
+  log("Routed Desktop files — folders and apps left in place")
+steps:
+  - tool: list
+    with:
+      dir: "~/Desktop/*"
+  - tool: route
+    with:
+      files: "$files"
+      table:
+        "png,jpg,jpeg,gif,webp,heic,heif,tiff,tif,bmp,svg,ico,raw,cr2,nef,orf,dng": "~/Pictures"
+        "pdf,doc,docx,dot,docm,rtf,txt,md,odt,ods,odp,xls,xlsx,xlsm,csv,tsv,ppt,pptx,pps,ppsx,key,numbers,pages,epub,mobi": "~/Documents"
+        "mp4,mov,m4v,avi,mkv,webm,wmv,flv,mpg,mpeg,m2v,3gp": "~/Movies"
+        "mp3,m4a,aac,wav,flac,aiff,aif,ogg,opus,wma": "~/Music"
+        default: "~/Documents/Other"
+  - tool: log
+    with:
+      message: "Routed Desktop files — folders and apps left in place"
+      category: automation

@@ -3,10 +3,12 @@ export type ScreenId =
   | 'review'
   | 'automations'
   | 'automation-new'
-  | 'connectors'
-  | 'log'
-  | 'rules'
   | 'rule-new'
+  | 'connectors'
+  | 'packs'
+  | 'rules'
+  | 'log'
+  | 'detailed-log'
   | 'keybinds'
   | 'appearance'
   | 'path-variables'
@@ -15,11 +17,40 @@ export type ScreenId =
 
 export type DaemonStatus = 'running' | 'idle' | 'stopped' | 'crashed'
 
-export type RuleMode = 'auto' | 'review' | 'ask'
+export type RuleCategory = 'core' | 'detection' | 'routing' | 'logging'
+
+/** A rule is a code file — one action, e.g. move(input, output). */
+export type RuleDef = {
+  id: string
+  connectorId: string
+  category: RuleCategory
+  params: string[]
+  source: string
+  origin: 'builtin' | 'user'
+  code?: string
+}
 
 export type AuthStatus = 'connected' | 'available' | 'expired' | 'error'
 
-export type AutomationTrigger = 'manual' | 'git-hook' | 'cli' | 'keybind'
+export type AutomationTrigger =
+  | 'manual'
+  | 'cli'
+  | 'keybind'
+  | 'schedule'
+  | 'watch'
+
+export type ScheduleTriggerConfig = {
+  cron: string
+  tz?: string
+}
+
+export type WatchTriggerConfig = {
+  paths: string[]
+  debounceMs?: number
+}
+
+/** How file actions are confirmed before running. */
+export type RunMode = 'review' | 'ask' | 'auto'
 
 export type PendingAction = {
   id: string
@@ -28,30 +59,43 @@ export type PendingAction = {
   trigger: string
   action: string
   reasoning?: string
-  sourceRuleId?: string
   connectorId: string
   automationId?: string
   editableAction: string
+  files?: string[]
+  plan?: string[]
+  undoable?: boolean
+  trustNote?: string
+  grantKind?: 'shell' | 'git' | 'chrome' | 'safari' | null
+  shellCommand?: string
 }
 
-export type Rule = {
-  id: string
-  trigger: string
+export type RouteRow = {
+  /** Comma-separated match values (e.g. extensions: "png, jpg"). */
   match: string
-  action: string
-  mode: RuleMode
-  connectorId: string
-  origin: 'user' | 'learned'
-  approvalCount: number
-  promoteSuggested: boolean
-  neverPromote?: boolean
+  dest: string
 }
 
+/**
+ * One rule call with bound parameters.
+ * Shape: rule(params) → output — e.g. list, detect, move.
+ */
 export type AutomationStep = {
   id: string
+  /** Rule id, e.g. list, move, detect */
+  fn: string
+  /** Bound parameters for the rule (source of truth). */
+  with: Record<string, unknown>
+  /** Derived from fn for connector badges / filters. */
   connectorId: string
+  /** Short name of the rule. */
   operation: string
+  /** Display summary of params (derived). */
   params: string
+  /** @deprecated legacy route table — migrated to core.lookup */
+  routes?: RouteRow[]
+  routeFallback?: string
+  routeBy?: 'extension'
 }
 
 export type Automation = {
@@ -64,9 +108,37 @@ export type Automation = {
   /** Electron-style accelerator, e.g. "CommandOrControl+Shift+D". Null = none. */
   keybind: string | null
   keybindEnabled: boolean
+  schedule?: ScheduleTriggerConfig
+  watch?: WatchTriggerConfig
   lastRunAt?: string
-  defaultMode: 'review' | 'ask'
+  defaultMode: RunMode
+  /** Connector ids this automation touches; used to hide it when a pack is uninstalled. */
+  connectors?: string[]
   steps: AutomationStep[]
+}
+
+export type ConnectorPermissionFlag = {
+  id: string
+  label: string
+  help?: string
+}
+
+export type ConnectorPermissionDecl = {
+  grant?: boolean
+  folderScopes?: boolean
+  allowlist?: boolean
+  hostAllowlist?: boolean
+  flags?: ConnectorPermissionFlag[]
+}
+
+export type ConnectorOAuth2Auth = {
+  type: 'oauth2'
+  authorizationUrl: string
+  tokenUrl: string
+  scopes: string[]
+  clientId: string
+  redirectUri?: string
+  apiHosts?: string[]
 }
 
 export type Connector = {
@@ -77,6 +149,12 @@ export type Connector = {
   scope: string
   kind: 'Local' | 'Web' | 'Cloud'
   popular?: boolean
+  experimental?: boolean
+  logo?: string
+  permission?: ConnectorPermissionDecl
+  auth?: ConnectorOAuth2Auth
+  setup?: { kind: string }
+  accountLabel?: string
 }
 
 export type LogEntry = {
@@ -90,6 +168,8 @@ export type LogEntry = {
   reversible: boolean
   error?: string
   undone?: boolean
+  runId?: string
+  moves?: { from: string; to: string }[]
 }
 
 export type RecentRun = {
@@ -103,7 +183,15 @@ export type RecentRun = {
   connectorId?: string
 }
 
-export type BlockingKind = 'ask' | 'auth' | 'daemon' | 'action-failed'
+export type BlockingKind =
+  | 'ask'
+  | 'auth'
+  | 'daemon'
+  | 'action-failed'
+  | 'permissions'
+  | 'confirm'
+  | 'chrome-setup'
+  | 'safari-setup'
 
 export type BlockingPrompt = {
   id: string
@@ -114,11 +202,9 @@ export type BlockingPrompt = {
   secondaryLabel?: string
   connectorId?: string
   pendingActionId?: string
-}
-
-export type PromotePrompt = {
-  ruleId: string
-  approvalCount: number
+  /** Automation waiting on folder permission grant (legacy). */
+  automationId?: string
+  folders?: string[]
 }
 
 export type LlmConfig = {
@@ -227,7 +313,6 @@ export type AppState = {
   route: ScreenId
   daemonStatus: DaemonStatus
   lastError: string | null
-  defaultRuleMode: 'review' | 'ask'
   llm: LlmConfig
   general: GeneralPrefs
   appearance: AppearancePrefs
@@ -239,12 +324,19 @@ export type AppState = {
   systemKeybinds: Record<SystemKeybindId, SystemKeybindState>
   pathVariables: PathVariable[]
   pending: PendingAction[]
-  rules: Rule[]
+  ruleLibrary: RuleDef[]
   automations: Automation[]
   connectors: Connector[]
   logs: LogEntry[]
   dismissedNotificationIds: string[]
   blocking: BlockingPrompt | null
-  promote: PromotePrompt | null
   firstRunDismissed: boolean
+  /** Total app memory (renderer + daemon), refreshed from the main process. */
+  memoryMb: number | null
+  /** Bumps when cached rule source changes — not persisted. */
+  ruleCodeEpoch: number
+  /** Automation being edited on the automation-new screen — not persisted. */
+  editingAutomationId: string | null
+  /** Log entry opened on the detailed-log screen — not persisted. */
+  viewingDetailedLogId: string | null
 }

@@ -1,0 +1,22 @@
+id: git-sync-loop
+name: Sync git (pull & push)
+description: Checks status, then pulls and pushes a local repo.
+trigger: manual
+active: false
+defaultMode: review
+keybind: null
+keybindEnabled: true
+script: |
+  status("~/Desktop/my-repo")
+  pull("~/Desktop/my-repo")
+  push("~/Desktop/my-repo")
+steps:
+  - tool: status
+    with:
+      repo: "~/Desktop/my-repo"
+  - tool: pull
+    with:
+      repo: "~/Desktop/my-repo"
+  - tool: push
+    with:
+      repo: "~/Desktop/my-repo"

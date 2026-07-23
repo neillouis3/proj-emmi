@@ -1,0 +1,17 @@
+id: premade-desktop-images
+when: manual-or-learned
+match:
+  watch: "~/Desktop"
+  glob: "~/Desktop/*"
+  extensions: [png, jpg, jpeg, webp]
+then:
+  tool: fs.move
+  with:
+    dest: "~/Pictures"
+mode: ask
+origin: user
+connectorId: fs
+approvalCount: 0
+promoteSuggested: false
+trigger: "~/Desktop"
+action: Move to ~/Pictures

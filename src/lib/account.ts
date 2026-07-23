@@ -1,7 +1,11 @@
 import type { AccountProfile } from '@/types/domain'
 
 export function accountDisplayName(account: AccountProfile) {
-  return `${account.firstName} ${account.lastName}`.trim() || account.handle
+  return (
+    `${account.firstName} ${account.lastName}`.trim() ||
+    account.handle ||
+    'Account'
+  )
 }
 
 export function accountInitials(account: AccountProfile) {

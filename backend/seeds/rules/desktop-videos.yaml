@@ -1,0 +1,17 @@
+id: premade-desktop-videos
+when: manual-or-learned
+match:
+  watch: "~/Desktop"
+  glob: "~/Desktop/*"
+  extensions: [mp4, mov]
+then:
+  tool: fs.move
+  with:
+    dest: "~/Movies"
+mode: ask
+origin: user
+connectorId: fs
+approvalCount: 0
+promoteSuggested: false
+trigger: "~/Desktop"
+action: Move to ~/Movies

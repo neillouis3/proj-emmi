@@ -1,0 +1,67 @@
+id: safari
+name: Safari
+description: Control Safari tabs and page actions locally via Apple Events JavaScript (macOS). Enable Develop → Allow JavaScript from Apple Events. pageShot uses desktop capture.
+kind: Local
+scope: Safari tabs + page actions (macOS)
+popular: true
+naming: dotted
+logo: safari.svg
+permission:
+  grant: true
+  folderScopes: true
+  hostAllowlist: true
+setup:
+  kind: safari-js
+rules:
+  - id: browse
+    file: browse.js
+    category: core
+    params: [url]
+  - id: tabs
+    file: tabs.js
+    category: core
+    params: []
+  - id: navigate
+    file: navigate.js
+    category: core
+    params: [url]
+  - id: pageRead
+    file: pageRead.js
+    category: core
+    params: []
+  - id: pageShot
+    file: pageShot.js
+    category: core
+    params: [path]
+  - id: wait
+    file: wait.js
+    category: core
+    params: [urlOrSelector, timeoutMs]
+  - id: pageText
+    file: pageText.js
+    category: core
+    params: []
+  - id: query
+    file: query.js
+    category: core
+    params: [selector]
+  - id: click
+    file: click.js
+    category: core
+    params: [selector]
+  - id: type
+    file: type.js
+    category: core
+    params: [selector, text]
+  - id: fill
+    file: fill.js
+    category: core
+    params: [selector, text]
+  - id: eval
+    file: eval.js
+    category: core
+    params: [expression]
+  - id: tab
+    file: tab.js
+    category: core
+    params: [action, target]
